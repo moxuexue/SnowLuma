@@ -35,12 +35,15 @@ const runtimeDistFiles = ['package.json',
 ];
 
 // Native binaries shipped for the selected target:
-//   * `snowluma-*.{dll,node}` – NTQQ hook (Windows-only).
-//   * `websocket-*.node`      – RFC 6455 framing/mask addon (all platforms).
+//   * `snowluma-*.{dll,node,so}` – NTQQ hook (Windows + Linux).
+//   * `websocket-*.node`         – RFC 6455 framing/mask addon (all platforms).
 const nativeFiles = [
   `websocket-${targetTriple}.node`,
   ...(targetPlatform === 'win32'
     ? [`snowluma-${targetTriple}.dll`, `snowluma-${targetTriple}.node`]
+    : []),
+  ...(targetPlatform === 'linux'
+    ? [`snowluma-${targetTriple}.node`, `snowluma-${targetTriple}.so`]
     : []),
 ];
 

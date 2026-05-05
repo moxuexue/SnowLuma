@@ -127,17 +127,25 @@ function getLoginInfo(ref: InstanceRef): { userId: number; nickname: string } {
   return { userId, nickname };
 }
 
-async function refreshAllGroupMembersCache(bridge: Bridge, qqInfo: QQInfo): Promise<void> {
-  let groups = qqInfo.groups;
-  try {
-    groups = await bridge.fetchGroupList();
-  } catch { /* use cached groups */ }
+// NOTE: do NOT iterate all groups here. Calling fetchGroupMemberList for
+// every group on demand causes a fan-out (1 incoming request -> N OIDB
+// 0xfe7_3 calls where N = group count). When a busy OneBot client (e.g.
+// MaiBot) issues `get_group_member_info(no_cache=true)` per inbound
+// message, this amplifier produced ~hundreds of OIDB calls per chat
+// message and triggered Tencent risk-control / 7-day account ban.
+// Each handler below now refreshes only the resource it actually needs.
 
-  for (const g of groups) {
-    try {
-      await bridge.fetchGroupMemberList(g.groupId);
-    } catch { /* best effort */ }
-  }
+async function refreshGroupListOnly(bridge: Bridge, qqInfo: QQInfo): Promise<void> {
+  try {
+    await bridge.fetchGroupList();
+  } catch { /* use cached */ }
+  void qqInfo;
+}
+
+async function refreshSingleGroupMembers(bridge: Bridge, groupId: number): Promise<void> {
+  try {
+    await bridge.fetchGroupMemberList(groupId);
+  } catch { /* use cached */ }
 }
 
 function normalizeHistoryCount(count?: number): number {
@@ -177,9 +185,7 @@ async function handleGetFriendList(bridge: Bridge, qqInfo: QQInfo): Promise<Json
 
 async function handleGetGroupList(bridge: Bridge, qqInfo: QQInfo, noCache?: boolean): Promise<JsonObject[]> {
   try {
-    if (noCache) {
-      await refreshAllGroupMembersCache(bridge, qqInfo);
-    } else if (qqInfo.groups.length === 0) {
+    if (noCache || qqInfo.groups.length === 0) {
       await bridge.fetchGroupList();
     }
   } catch { /* use cached */ }
@@ -192,9 +198,7 @@ async function handleGetGroupList(bridge: Bridge, qqInfo: QQInfo, noCache?: bool
 }
 
 async function handleGetGroupInfo(bridge: Bridge, qqInfo: QQInfo, groupId: number, noCache?: boolean): Promise<JsonObject | null> {
-  if (noCache) {
-    try { await refreshAllGroupMembersCache(bridge, qqInfo); } catch { /* use cached */ }
-  } else if (!qqInfo.findGroup(groupId)) {
+  if (noCache || !qqInfo.findGroup(groupId)) {
     try { await bridge.fetchGroupList(); } catch { /* use cached */ }
   }
   const g = qqInfo.findGroup(groupId);
@@ -209,7 +213,7 @@ async function handleGetGroupInfo(bridge: Bridge, qqInfo: QQInfo, groupId: numbe
 
 async function handleGetGroupMemberList(bridge: Bridge, qqInfo: QQInfo, groupId: number, noCache?: boolean): Promise<JsonObject[]> {
   if (noCache) {
-    try { await refreshAllGroupMembersCache(bridge, qqInfo); } catch { /* use cached */ }
+    await refreshSingleGroupMembers(bridge, groupId);
 
     const g = qqInfo.findGroup(groupId);
     if (!g) return [];
@@ -259,10 +263,8 @@ async function handleGetGroupMemberList(bridge: Bridge, qqInfo: QQInfo, groupId:
 }
 
 async function handleGetGroupMemberInfo(bridge: Bridge, qqInfo: QQInfo, groupId: number, userId: number, noCache?: boolean): Promise<JsonObject | null> {
-  if (noCache) {
-    try { await refreshAllGroupMembersCache(bridge, qqInfo); } catch { /* use cached */ }
-  } else if (!qqInfo.findGroupMember(groupId, userId)) {
-    try { await bridge.fetchGroupMemberList(groupId); } catch { /* use cached */ }
+  if (noCache || !qqInfo.findGroupMember(groupId, userId)) {
+    await refreshSingleGroupMembers(bridge, groupId);
   }
   const m = qqInfo.findGroupMember(groupId, userId);
   if (!m) return null;

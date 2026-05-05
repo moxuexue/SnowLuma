@@ -84,5 +84,46 @@ function loadAddon(): NativeAddon {
   return mod.exports as unknown as NativeAddon;
 }
 
-const addon: NativeAddon = loadAddon();
+// Local-only escape hatch: when SNOWLUMA_DEV_NO_NATIVE=1 is set, we return a
+// stub addon that lets the process boot (so the WebUI / HTTP API can run on
+// platforms without a prebuilt binary, e.g. darwin-arm64 dev machines). Any
+// actual WebSocket parsing/serialization call will throw at use-time. This
+// branch never triggers for normal users because the env var is opt-in.
+function createStubAddon(reason: string): NativeAddon {
+  const fail = (): never => {
+    throw new Error(
+      `[snowluma/websocket] native addon is stubbed (${reason}). ` +
+        `Set SNOWLUMA_DEV_NO_NATIVE=0 (or unset) and provide the prebuilt binary to enable WebSocket I/O.`,
+    );
+  };
+  class StubParser {
+    constructor(_options: ParserOptions) {}
+    push(_chunk: Buffer): ParseResult {
+      return fail();
+    }
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[snowluma/websocket] WARNING: using stub addon (${reason}). WebSocket features are disabled.`,
+  );
+  return {
+    Parser: StubParser as unknown as NativeAddon['Parser'],
+    buildFrame: fail as unknown as NativeAddon['buildFrame'],
+    computeAcceptKey: fail as unknown as NativeAddon['computeAcceptKey'],
+  };
+}
+
+function tryLoad(): NativeAddon {
+  const devSkip = process.env.SNOWLUMA_DEV_NO_NATIVE === '1';
+  try {
+    return loadAddon();
+  } catch (err) {
+    if (devSkip) {
+      return createStubAddon((err as Error).message);
+    }
+    throw err;
+  }
+}
+
+const addon: NativeAddon = tryLoad();
 export default addon;

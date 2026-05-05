@@ -20,11 +20,14 @@ async function main() {
   bridgeManager.bind(ntqq);
   oneBotManager.bind(bridgeManager);
 
-  if (typeof __BUILD_WEBUI__ !== 'undefined' && __BUILD_WEBUI__) {
+  if (
+    (typeof __BUILD_WEBUI__ !== 'undefined' && __BUILD_WEBUI__) ||
+    process.env.SNOWLUMA_DEV_WEBUI === '1'
+  ) {
     try {
       log.info('WebUI is enabled, starting...');
       const { initWebUI } = await import('./webui/server');
-      initWebUI(runtimeConfig.webuiPort || 8080, oneBotManager, hookManager);
+      await initWebUI(runtimeConfig.webuiPort || 5099, oneBotManager, hookManager);
     } catch (err) {
       log.error('Failed to start WebUI: ', err);
     }

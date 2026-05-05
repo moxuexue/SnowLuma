@@ -1,0 +1,91 @@
+import { LayoutDashboard, Settings, SlidersHorizontal, Terminal } from 'lucide-react';
+import { motion } from 'motion/react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
+import { APP_NAME, APP_VERSION } from '@/types';
+
+export type Page = 'overview' | 'config' | 'logs' | 'settings';
+
+export const NAV_ITEMS: { page: Page; label: string; icon: typeof LayoutDashboard; description: string }[] = [
+  { page: 'overview', label: '总览', icon: LayoutDashboard, description: '主机与服务状态' },
+  { page: 'config', label: '节点配置', icon: Settings, description: 'OneBot 协议端点' },
+  { page: 'logs', label: '日志', icon: Terminal, description: '实时事件流' },
+  { page: 'settings', label: '系统设置', icon: SlidersHorizontal, description: '主题与账号' },
+];
+
+interface SidebarProps {
+  active: Page;
+  onNavigate: (page: Page) => void;
+  collapsed?: boolean;
+  onItemClick?: () => void;
+}
+
+export function Sidebar({ active, onNavigate, collapsed = false, onItemClick }: SidebarProps) {
+  return (
+    <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
+      {/* Brand */}
+      <div className={cn('flex h-16 items-center gap-3 border-b px-4', collapsed && 'justify-center px-2')}>
+        <div className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10 ring-1 ring-primary/20">
+          <img src="/logo.png" alt="SnowLuma" className="size-7 object-contain" />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-bold tracking-tight">{APP_NAME}</span>
+              <span className="text-[10px] font-medium text-muted-foreground tabular-nums">v{APP_VERSION}</span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">OneBot v11 控制台</span>
+          </div>
+        )}
+      </div>
+
+      {/* Nav */}
+      <ScrollArea className="flex-1 min-h-0" viewportClassName="[&>div]:!block">
+        <nav className={cn('flex flex-col gap-1 p-2', collapsed && 'items-center')}>
+          {NAV_ITEMS.map(({ page, label, icon: Icon, description }) => {
+            const isActive = active === page;
+            return (
+              <button
+                key={page}
+                type="button"
+                title={collapsed ? label : undefined}
+                onClick={() => {
+                  onNavigate(page);
+                  onItemClick?.();
+                }}
+                className={cn(
+                  'group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors cursor-pointer outline-none',
+                  collapsed && 'w-10 justify-center px-0',
+                  isActive
+                    ? 'text-sidebar-accent-foreground'
+                    : 'text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground'
+                )}
+              >
+                {isActive && (
+                  <motion.span
+                    layoutId="sidebar-active-pill"
+                    className="absolute inset-0 rounded-lg bg-sidebar-accent ring-1 ring-primary/20"
+                    transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <Icon className={cn('relative z-10 size-4 shrink-0', isActive && 'text-primary')} />
+                {!collapsed && (
+                  <span className="relative z-10 flex min-w-0 flex-1 flex-col items-start">
+                    <span className="truncate leading-tight">{label}</span>
+                    <span className="text-[10px] font-normal text-muted-foreground truncate">{description}</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </ScrollArea>
+
+      <Separator />
+      <div className={cn('px-4 py-3 text-[10px] text-muted-foreground', collapsed && 'text-center px-2')}>
+        {collapsed ? '©' : `© ${new Date().getFullYear()} SnowLuma`}
+      </div>
+    </div>
+  );
+}

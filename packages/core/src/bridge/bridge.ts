@@ -98,6 +98,15 @@ export class Bridge {
   private cmdHandlers_ = new Map<string, CmdParser[]>();
   private packetClient_: PacketSender | null = null;
   private memberRefreshTasks_ = new Map<number, Promise<void>>();
+  // Throttle for fetchGroupMemberList(groupId): coalesces in-flight calls
+  // and serves a fresh result for `kMemberListTtlMs` to all callers.
+  // Without this, a busy OneBot client (e.g. MaiBot calling
+  // get_group_member_info(no_cache=true) per inbound message) would
+  // trigger one OIDB 0xfe7_3 per chat message per group; sustained rate
+  // (>1k/h) is detected by Tencent risk-control and gets the account
+  // banned for 7 days.
+  private memberListInflight_ = new Map<number, Promise<GroupMemberInfo[]>>();
+  private memberListLastFetch_ = new Map<number, { at: number; data: GroupMemberInfo[] }>();
 
   // Sequence and random generators for outgoing messages
   private clientSeq_ = 100000000 + (Date.now() % 1000000000);
@@ -372,7 +381,27 @@ export class Bridge {
 
   async fetchFriendList(): Promise<FriendInfo[]> { return fetchFriendList_(this); }
   async fetchGroupList(): Promise<QQGroupInfo[]> { return fetchGroupList_(this); }
-  async fetchGroupMemberList(groupId: number): Promise<GroupMemberInfo[]> { return fetchGroupMemberList_(this, groupId); }
+  async fetchGroupMemberList(groupId: number): Promise<GroupMemberInfo[]> {
+    const kMemberListTtlMs = 60_000;
+    const now = Date.now();
+    const last = this.memberListLastFetch_.get(groupId);
+    if (last && now - last.at < kMemberListTtlMs) {
+      return last.data;
+    }
+    const inflight = this.memberListInflight_.get(groupId);
+    if (inflight) return inflight;
+    const task = (async () => {
+      try {
+        const data = await fetchGroupMemberList_(this, groupId);
+        this.memberListLastFetch_.set(groupId, { at: Date.now(), data });
+        return data;
+      } finally {
+        this.memberListInflight_.delete(groupId);
+      }
+    })();
+    this.memberListInflight_.set(groupId, task);
+    return task;
+  }
   async fetchUserProfile(uin: number): Promise<UserProfileInfo> { return fetchUserProfile_(this, uin); }
   async fetchGroupRequests(filtered = false): Promise<GroupRequestInfo[]> { return fetchGroupRequests_(this, filtered); }
   async fetchDownloadRKeys(): Promise<DownloadRKeyInfo[]> { return fetchDownloadRKeys_(this); }

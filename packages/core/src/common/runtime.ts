@@ -9,7 +9,7 @@ const CONFIG_DIR = 'config';
 const RUNTIME_CONFIG_PATH = path.join(CONFIG_DIR, 'runtime.json');
 
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
-  webuiPort: 8080,
+  webuiPort: 5099,
 };
 
 export function loadRuntimeConfig(): RuntimeConfig {
@@ -22,7 +22,7 @@ export function loadRuntimeConfig(): RuntimeConfig {
   }
 
   const normalized: RuntimeConfig = {
-    webuiPort: normalizePort(loaded.webuiPort ?? 8080, 8080),
+    webuiPort: normalizePort(loaded.webuiPort ?? 5099, 5099),
   };
 
   if (
@@ -43,7 +43,7 @@ function tryLoadRuntimeConfig(): RuntimeConfig | null {
     if (!isObject(parsed)) return null;
 
     return {
-      webuiPort: normalizePort(parsed.webuiPort ?? 8080, 8080),
+      webuiPort: normalizePort(parsed.webuiPort ?? 5099, 5099),
     };
   } catch {
     return null;
