@@ -38,8 +38,37 @@ jobs:
               page++;
             }
 
+  typecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Runs `tsc --noEmit` (or `tsc -b`) in every workspace package that
+      # exposes a `typecheck` script. Platform-independent, so a single
+      # ubuntu runner is sufficient.
+      - name: Type check all packages
+        run: pnpm typecheck
+
   build:
-    needs: cleanup
+    needs: [cleanup, typecheck]
     permissions:
       contents: read
     strategy:
@@ -52,9 +81,9 @@ jobs:
           - name: linux-x64
             os: ubuntu-latest
             target: linux-x64
-          - name: linux-arm64
-            os: ubuntu-24.04-arm
-            target: linux-arm64
+          # - name: linux-arm64
+          #   os: ubuntu-24.04-arm
+          #   target: linux-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout

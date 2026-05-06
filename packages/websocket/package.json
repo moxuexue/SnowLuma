@@ -12,6 +12,9 @@
     }
   },
   "description": "SnowLuma in-tree WebSocket implementation. Loads packages/runtime/native/websocket-<platform>-<arch>.node via process.dlopen().",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "typescript": "catalog:"

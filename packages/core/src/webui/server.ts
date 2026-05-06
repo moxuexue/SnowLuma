@@ -440,7 +440,10 @@ export async function initWebUI(
     const uin = c.req.param('uin');
     if (!UIN_REGEX.test(uin)) return c.json({ message: 'invalid uin' }, 400);
     const config = loadOneBotConfig(uin);
-    return c.json({ config });
+    return c.json({
+      ...config,
+      config,
+    });
   });
 
   app.post('/api/config/:uin', async (c) => {

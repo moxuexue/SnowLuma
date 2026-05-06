@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { randomBytes } from 'crypto';
 import type {
   HttpPostEndpoint,
   HttpServerEndpoint,
@@ -41,26 +40,6 @@ export function loadOneBotConfig(uin: string): OneBotConfig {
 
   const config = fromJson(merged);
   let shouldSave = !perUinConfig;
-
-  // Auto-generate per-endpoint accessToken if not set.
-  for (const s of config.httpServers) {
-    if (!s.accessToken) {
-      s.accessToken = generateRandomKey();
-      shouldSave = true;
-    }
-  }
-  for (const s of config.wsServers) {
-    if (!s.accessToken) {
-      s.accessToken = generateRandomKey();
-      shouldSave = true;
-    }
-  }
-  for (const c of config.wsClients) {
-    if (!c.accessToken) {
-      c.accessToken = generateRandomKey();
-      shouldSave = true;
-    }
-  }
 
   // Persist normalized endpoints and generated keys.
   merged.httpServers = config.httpServers.map((s) => {
@@ -274,10 +253,6 @@ function asNumber(value: unknown, fallback = 0): number {
     if (Number.isFinite(n)) return Math.max(0, Math.trunc(n));
   }
   return fallback;
-}
-
-function generateRandomKey(byteLength = 18): string {
-  return randomBytes(byteLength).toString('hex');
 }
 
 function tryLoadJson(filePath: string): JsonObject | null {

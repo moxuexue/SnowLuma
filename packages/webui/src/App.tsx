@@ -167,13 +167,14 @@ function AppInner() {
         const res = await fetchApi(`/api/config/${encodeURIComponent(selectedUin)}`);
         if (!res.ok) return;
         const data = await res.json();
+        const loaded = data?.config ?? data;
         if (cancelled) return;
         setConfig({
-          httpServers: data.httpServers || [],
-          httpPostEndpoints: data.httpPostEndpoints || [],
-          wsServers: data.wsServers || [],
-          wsClients: data.wsClients || [],
-          musicSignUrl: data.musicSignUrl,
+          httpServers: loaded?.httpServers || [],
+          httpPostEndpoints: loaded?.httpPostEndpoints || [],
+          wsServers: loaded?.wsServers || [],
+          wsClients: loaded?.wsClients || [],
+          musicSignUrl: loaded?.musicSignUrl,
         });
       } catch (e) {
         console.error('load-config', e);

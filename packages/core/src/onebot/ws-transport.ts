@@ -33,18 +33,23 @@ export class WsTransport {
   private readonly forwardConnections = new Map<WebSocket, ForwardConnection>();
   private readonly reverseConnections = new Set<ReverseConnection>();
   private readonly reconnectTimers = new Set<NodeJS.Timeout>();
+  private readonly reconnectTimersByKey = new Map<string, NodeJS.Timeout>();
+  private readonly activeReverseClientKeys = new Set<string>();
   private serverEndpoints: WsServerEndpoint[] = [];
   private clientEndpoints: WsClientEndpoint[] = [];
+  private desiredClientKeys = new Set<string>();
   private stopped = false;
 
   constructor(config: OneBotConfig, context: WsTransportContext) {
     this.serverEndpoints = [...config.wsServers];
     this.clientEndpoints = [...config.wsClients];
+    this.desiredClientKeys = new Set(this.clientEndpoints.map(wsClientKey));
     this.context = context;
   }
 
   start(): void {
     this.stopped = false;
+    this.desiredClientKeys = new Set(this.clientEndpoints.map(wsClientKey));
     this.startServers();
     this.startReverseClients();
   }
@@ -54,6 +59,7 @@ export class WsTransport {
     const nextClients = [...config.wsClients];
     const nextServerKeys = new Set(nextServers.map(wsServerKey));
     const nextClientKeys = new Set(nextClients.map(wsClientKey));
+    this.desiredClientKeys = nextClientKeys;
 
     for (const [key, server] of this.servers) {
       if (!nextServerKeys.has(key)) {
@@ -71,6 +77,8 @@ export class WsTransport {
 
     for (const conn of [...this.reverseConnections]) {
       if (!nextClientKeys.has(conn.key)) {
+        this.clearReconnectTimer(conn.key);
+        this.activeReverseClientKeys.delete(conn.key);
         safeClose(conn.socket);
         this.reverseConnections.delete(conn);
         log.info('stopped reverse client %s', conn.endpointUrl);
@@ -79,7 +87,7 @@ export class WsTransport {
 
     for (const endpoint of nextClients) {
       const key = wsClientKey(endpoint);
-      if (![...this.reverseConnections].some(conn => conn.key === key)) {
+      if (!this.activeReverseClientKeys.has(key) && !this.reconnectTimersByKey.has(key)) {
         this.startClientEndpoint(endpoint);
       }
     }
@@ -90,12 +98,15 @@ export class WsTransport {
 
   stop(): void {
     this.stopped = true;
+    this.desiredClientKeys.clear();
     this.publishEvent(this.context.buildLifecycleEvent('disable'));
 
     for (const timer of this.reconnectTimers) {
       clearTimeout(timer);
     }
     this.reconnectTimers.clear();
+    this.reconnectTimersByKey.clear();
+    this.activeReverseClientKeys.clear();
 
     for (const [socket] of this.forwardConnections) {
       safeClose(socket);
@@ -186,11 +197,17 @@ export class WsTransport {
   private startClientEndpoint(endpoint: WsClientEndpoint): void {
     const role = endpoint.role ?? 'universal';
     const reconnectIntervalMs = Math.max(1000, endpoint.reconnectIntervalMs ?? 5000);
-    this.connectReverseClient(endpoint.url, role, reconnectIntervalMs, endpoint.accessToken ?? '', endpoint.name);
+    const key = wsClientKey(endpoint);
+    if (this.activeReverseClientKeys.has(key) || this.reconnectTimersByKey.has(key)) return;
+    this.connectReverseClient(endpoint.url, role, reconnectIntervalMs, endpoint.accessToken ?? '', endpoint.name, key);
   }
 
-  private connectReverseClient(endpointUrl: string, role: WsRole, reconnectIntervalMs: number, accessToken: string, name?: string): void {
-    if (this.stopped) return;
+  private connectReverseClient(endpointUrl: string, role: WsRole, reconnectIntervalMs: number, accessToken: string, name?: string, key?: string): void {
+    const connKey = key ?? wsClientPartsKey(endpointUrl, role, reconnectIntervalMs, accessToken);
+    if (this.stopped || !this.desiredClientKeys.has(connKey)) return;
+    if (this.activeReverseClientKeys.has(connKey)) return;
+    this.clearReconnectTimer(connKey);
+    this.activeReverseClientKeys.add(connKey);
 
     const headers: Record<string, string> = {
       'User-Agent': 'OneBot',
@@ -203,7 +220,7 @@ export class WsTransport {
     }
 
     const socket = new WebSocket(endpointUrl, { headers });
-    const conn: ReverseConnection = { socket, role, endpointUrl, reconnectIntervalMs, key: wsClientPartsKey(endpointUrl, role, reconnectIntervalMs, accessToken) };
+    const conn: ReverseConnection = { socket, role, endpointUrl, reconnectIntervalMs, key: connKey };
     this.reverseConnections.add(conn);
 
     socket.on('open', () => {
@@ -218,19 +235,33 @@ export class WsTransport {
 
     socket.on('close', () => {
       this.reverseConnections.delete(conn);
+      this.activeReverseClientKeys.delete(connKey);
       if (this.stopped) return;
+      if (!this.desiredClientKeys.has(connKey)) return;
+      if (this.reconnectTimersByKey.has(connKey)) return;
 
       const timer = setTimeout(() => {
         this.reconnectTimers.delete(timer);
-        this.connectReverseClient(endpointUrl, role, reconnectIntervalMs, accessToken, name);
+        this.reconnectTimersByKey.delete(connKey);
+        if (this.stopped || !this.desiredClientKeys.has(connKey)) return;
+        this.connectReverseClient(endpointUrl, role, reconnectIntervalMs, accessToken, name, connKey);
       }, reconnectIntervalMs);
       timer.unref?.();
       this.reconnectTimers.add(timer);
+      this.reconnectTimersByKey.set(connKey, timer);
     });
 
     socket.on('error', (error: Error) => {
       log.warn('reverse error %s: %s', endpointUrl, error instanceof Error ? error.message : String(error));
     });
+  }
+
+  private clearReconnectTimer(key: string): void {
+    const timer = this.reconnectTimersByKey.get(key);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.reconnectTimersByKey.delete(key);
+    this.reconnectTimers.delete(timer);
   }
 
   private async handleApiMessage(socket: WebSocket, role: WsRole, raw: Buffer | string): Promise<void> {
