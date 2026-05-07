@@ -5,7 +5,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Cpu,
-  HardDrive,
   Loader2,
   MemoryStick,
   MonitorCog,
@@ -31,17 +30,20 @@ interface OverviewPageProps {
   processList: HookProcessInfo[];
   processLoadingPid: number | null;
   processUnloadingPid: number | null;
+  processRefreshingPid: number | null;
   processActionStatus: string;
   systemInfo: SystemInfo | null;
   onRefreshProcesses: () => void;
   onRefreshSystem: () => void;
   onLoadProcess: (pid: number) => Promise<void> | void;
   onUnloadProcess: (pid: number) => Promise<void> | void;
+  onRefreshProcess: (pid: number) => Promise<void> | void;
 }
 
 const processStatusLabel: Record<HookProcessInfo['status'], string> = {
   available: '可加载',
   loading: '加载中',
+  connecting: '等待连接',
   loaded: '等待登录',
   online: '已在线',
   error: '错误',
@@ -50,8 +52,9 @@ const processStatusLabel: Record<HookProcessInfo['status'], string> = {
 
 function processBadgeVariant(status: HookProcessInfo['status']) {
   if (status === 'online') return 'success' as const;
-  if (status === 'error' || status === 'disconnected') return 'destructive' as const;
-  if (status === 'loading' || status === 'loaded') return 'default' as const;
+  if (status === 'error') return 'destructive' as const;
+  if (status === 'disconnected') return 'destructive' as const;
+  if (status === 'loading' || status === 'connecting' || status === 'loaded') return 'default' as const;
   return 'secondary' as const;
 }
 
@@ -99,12 +102,14 @@ export function OverviewPage({
   processList,
   processLoadingPid,
   processUnloadingPid,
+  processRefreshingPid,
   processActionStatus,
   systemInfo,
   onRefreshProcesses,
   onRefreshSystem,
   onLoadProcess,
   onUnloadProcess,
+  onRefreshProcess,
 }: OverviewPageProps) {
   const [confirm, setConfirm] = useState<
     | { kind: 'load' | 'unload'; pid: number; name: string }
@@ -218,28 +223,39 @@ export function OverviewPage({
             </div>
           </div>
 
-          {/* GPU */}
+          {/* Runtime */}
           <div className="rounded-lg border bg-card/40 p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <HardDrive className="size-4 text-primary" />
-              <span className="text-sm font-semibold">显示适配器</span>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Server className="size-4 text-primary" />
+                <span className="text-sm font-semibold">运行进程</span>
+              </div>
+              <span className="text-sm font-semibold tabular-nums text-primary">
+                {systemInfo ? `PID ${systemInfo.runtime.pid}` : '—'}
+              </span>
             </div>
             {!systemInfo ? (
               <div className="space-y-2">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-4 w-1/2" />
               </div>
-            ) : systemInfo.gpus.length === 0 ? (
-              <p className="text-xs text-muted-foreground">未检测到 GPU 信息</p>
             ) : (
-              <ul className="space-y-1.5">
-                {systemInfo.gpus.map((g, i) => (
-                  <li key={i} className="rounded-md bg-background/60 px-2 py-1.5 text-xs">
-                    <div className="truncate font-medium" title={g.name}>{g.name}</div>
-                    {g.vendor && <div className="text-[10px] text-muted-foreground">{g.vendor}</div>}
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center justify-between rounded-md bg-background/60 px-2 py-1.5">
+                  <span className="text-muted-foreground">RSS</span>
+                  <span className="font-medium tabular-nums">{formatBytes(systemInfo.runtime.rss)}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md bg-background/60 px-2 py-1.5">
+                  <span className="text-muted-foreground">堆内存</span>
+                  <span className="font-medium tabular-nums">
+                    {formatBytes(systemInfo.runtime.heapUsed)} / {formatBytes(systemInfo.runtime.heapTotal)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-md bg-background/60 px-2 py-1.5">
+                  <span className="text-muted-foreground">外部内存</span>
+                  <span className="font-medium tabular-nums">{formatBytes(systemInfo.runtime.external)}</span>
+                </div>
+              </div>
             )}
           </div>
         </CardContent>
@@ -278,10 +294,13 @@ export function OverviewPage({
               {processList.map((proc, idx) => {
                 const loading = processLoadingPid === proc.pid || proc.status === 'loading';
                 const unloading = processUnloadingPid === proc.pid;
-                const busy = loading || unloading;
+                const refreshing = processRefreshingPid === proc.pid;
+                const busy = loading || unloading || refreshing;
                 const isOnline = proc.status === 'online';
-                const canUnload =
-                  proc.injected || proc.status === 'loaded' || isOnline || proc.status === 'disconnected';
+                const canUnload = proc.injected;
+                // Refresh is meaningful whenever a hook may exist (so the user
+                // can re-check the pipe and trigger a reconnect on demand).
+                const showRefresh = proc.injected || proc.status === 'connecting' || proc.status === 'disconnected';
                 return (
                   <motion.div
                     key={proc.pid}
@@ -328,26 +347,44 @@ export function OverviewPage({
                         </div>
                       )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant={canUnload ? 'outline' : 'default'}
-                      disabled={busy}
-                      onClick={() =>
-                        setConfirm({
-                          kind: canUnload ? 'unload' : 'load',
-                          pid: proc.pid,
-                          name: proc.name || `PID ${proc.pid}`,
-                        })
-                      }
-                      className={cn(
-                        'shrink-0',
-                        canUnload && 'text-destructive hover:bg-destructive/10 hover:text-destructive'
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {showRefresh && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          disabled={busy}
+                          aria-label={`刷新进程 ${proc.pid} 管道状态`}
+                          title="刷新管道状态 / 重连"
+                          onClick={() => onRefreshProcess(proc.pid)}
+                          className="size-8 text-muted-foreground hover:text-foreground"
+                        >
+                          {refreshing ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="size-3.5" />
+                          )}
+                        </Button>
                       )}
-                    >
-                      {busy && <Loader2 className="size-3.5 animate-spin" />}
-                      {!busy && canUnload && <Unplug className="size-3.5" />}
-                      {canUnload ? (unloading ? '卸载中' : '卸载') : loading ? '加载中' : '加载'}
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant={canUnload ? 'outline' : 'default'}
+                        disabled={busy}
+                        onClick={() =>
+                          setConfirm({
+                            kind: canUnload ? 'unload' : 'load',
+                            pid: proc.pid,
+                            name: proc.name || `PID ${proc.pid}`,
+                          })
+                        }
+                        className={cn(
+                          canUnload && 'text-destructive hover:bg-destructive/10 hover:text-destructive'
+                        )}
+                      >
+                        {(loading || unloading) && <Loader2 className="size-3.5 animate-spin" />}
+                        {!loading && !unloading && canUnload && <Unplug className="size-3.5" />}
+                        {canUnload ? (unloading ? '卸载中' : '卸载') : loading ? '加载中' : '加载'}
+                      </Button>
+                    </div>
                   </motion.div>
                 );
               })}

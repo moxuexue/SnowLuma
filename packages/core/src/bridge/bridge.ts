@@ -475,17 +475,10 @@ function elementsToText(elements: MessageElement[]): string {
 
 function printEvent(event: QQEventVariant): void {
   switch (event.kind) {
-    case 'group_message': {
-      const c = elementsToText(event.elements);
-      const s = event.senderCard || event.senderNick || String(event.senderUin);
-      eventLog.success('群 %d | %s(%d): %s', event.groupId, s, event.senderUin, c);
-      break;
-    }
+    case 'group_message':
     case 'friend_message':
-      eventLog.info('私聊 %s(%d): %s', event.senderNick || String(event.senderUin), event.senderUin, elementsToText(event.elements));
-      break;
     case 'temp_message':
-      eventLog.info('临时 %d(群%d): %s', event.senderUin, event.groupId, elementsToText(event.elements));
+      // Message logging is handled by OneBot layer with message ID
       break;
     case 'group_recall':
       eventLog.warn('群撤回 %d | %d 被 %d 撤回', event.groupId, event.authorUin, event.operatorUin);

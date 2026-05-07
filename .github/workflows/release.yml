@@ -20,9 +20,9 @@ jobs:
           - name: linux-x64
             os: ubuntu-latest
             target: linux-x64
-          # - name: linux-arm64
-          #   os: ubuntu-24.04-arm
-          #   target: linux-arm64
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: linux-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -143,7 +143,7 @@ jobs:
           ## 使用说明
           - Windows x64：\`launcher.bat\` 或 \`node index.mjs\`。
           - Linux：\`./launcher.sh\` 或 \`node index.mjs\`。
-          - 所有压缩包均已内置 WebUI 静态资源；启动后访问 http://localhost:8080。
+          - 所有压缩包均已内置 WebUI 静态资源；启动后访问 http://localhost:5099。
           - Linux 版本仅提供 OneBot 桥接能力，NTQQ 进程注入仅在 Windows 下生效。
           EOF
 

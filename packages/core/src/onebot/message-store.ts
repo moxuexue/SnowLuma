@@ -120,15 +120,31 @@ export class MessageStore {
   }
 
   resolveReplySequence(isGroup: boolean, sessionId: number, messageId: number): number | null {
-    if (!Number.isInteger(sessionId) || sessionId <= 0 || !isValidMessageId(messageId)) return null;
-    const row = this.db.prepare(
-      `SELECT sequence
-       FROM messages
-       WHERE is_group = ? AND session_id = ? AND message_hash = ?
-       LIMIT 1`
-    ).get(isGroup ? 1 : 0, sessionId, messageId) as { sequence: number } | undefined;
+    if (!Number.isInteger(sessionId) || sessionId <= 0 || !isValidMessageId(messageId)) {
+      return null;
+    }
     
-    if (!row || !Number.isInteger(row.sequence) || row.sequence <= 0) return null;
+    // For private messages, we cannot rely on session_id matching because:
+    // - When receiving: session_id is the sender's UIN
+    // - When sending reply: sessionId parameter is the recipient's UIN (who we're sending to)
+    // So for private messages, we only match by message_hash and is_group flag.
+    const row = isGroup
+      ? this.db.prepare(
+          `SELECT sequence
+           FROM messages
+           WHERE is_group = 1 AND session_id = ? AND message_hash = ?
+           LIMIT 1`
+        ).get(sessionId, messageId) as { sequence: number } | undefined
+      : this.db.prepare(
+          `SELECT sequence
+           FROM messages
+           WHERE is_group = 0 AND message_hash = ?
+           LIMIT 1`
+        ).get(messageId) as { sequence: number } | undefined;
+    
+    if (!row || !Number.isInteger(row.sequence) || row.sequence <= 0) {
+      return null;
+    }
     return row.sequence;
   }
 

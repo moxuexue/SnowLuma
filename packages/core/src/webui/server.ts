@@ -11,12 +11,8 @@ import path from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { WebuiAuth, evaluatePasswordRules, isStrongPassword } from './auth';
 import { findAvailablePort } from './port';
-
-const execAsync = promisify(exec);
 
 const log = createLogger('WebUI');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -269,67 +265,13 @@ export async function initWebUI(
     return usage;
   }
 
-  let cachedGpu: { name: string; vendor: string }[] | null = null;
-  let gpuFetchedAt = 0;
-  async function detectGpus(): Promise<{ name: string; vendor: string }[]> {
-    const now = Date.now();
-    if (cachedGpu && now - gpuFetchedAt < 60_000) return cachedGpu;
-    const platform = os.platform();
-    const result: { name: string; vendor: string }[] = [];
-    try {
-      if (platform === 'win32') {
-        const { stdout } = await execAsync('wmic path win32_VideoController get Name /value', {
-          timeout: 4000,
-          windowsHide: true,
-        });
-        for (const line of stdout.split(/\r?\n/)) {
-          const m = line.match(/^Name=(.+)$/);
-          if (m && m[1].trim()) result.push({ name: m[1].trim(), vendor: '' });
-        }
-      } else if (platform === 'linux') {
-        try {
-          const { stdout } = await execAsync('lspci -mm | grep -Ei "vga|3d|display"', { timeout: 4000 });
-          for (const line of stdout.split(/\r?\n/)) {
-            const parts = line.match(/"([^"]+)"\s+"([^"]+)"\s+"([^"]+)"/);
-            if (parts) result.push({ vendor: parts[2], name: parts[3] });
-          }
-        } catch {
-          try {
-            const { stdout } = await execAsync('nvidia-smi --query-gpu=name --format=csv,noheader', { timeout: 4000 });
-            for (const line of stdout.split(/\r?\n/)) {
-              if (line.trim()) result.push({ name: line.trim(), vendor: 'NVIDIA' });
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-      } else if (platform === 'darwin') {
-        const { stdout } = await execAsync('system_profiler SPDisplaysDataType -json', { timeout: 5000 });
-        try {
-          const json = JSON.parse(stdout);
-          const list = json.SPDisplaysDataType ?? [];
-          for (const item of list) {
-            if (item._name) result.push({ name: item._name, vendor: item.spdisplays_vendor ?? '' });
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch {
-      /* best-effort */
-    }
-    cachedGpu = result;
-    gpuFetchedAt = now;
-    return result;
-  }
-
-  app.get('/api/system', async (c) => {
+  app.get('/api/system', (c) => {
     const cpus = os.cpus();
     const usage = sampleCpuLoad();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const usedMem = totalMem - freeMem;
-    const gpus = await detectGpus().catch(() => []);
+    const runtimeMemory = process.memoryUsage();
     return c.json({
       hostname: os.hostname(),
       platform: os.platform(),
@@ -352,7 +294,14 @@ export async function initWebUI(
         used: usedMem,
         usagePercent: totalMem ? (usedMem / totalMem) * 100 : 0,
       },
-      gpus,
+      runtime: {
+        pid: process.pid,
+        rss: runtimeMemory.rss,
+        heapTotal: runtimeMemory.heapTotal,
+        heapUsed: runtimeMemory.heapUsed,
+        external: runtimeMemory.external,
+        arrayBuffers: runtimeMemory.arrayBuffers,
+      },
     });
   });
 
@@ -430,6 +379,20 @@ export async function initWebUI(
     }
     try {
       const processInfo = await hookManager.unloadProcess(pid);
+      return c.json({ success: processInfo.status !== 'error', process: processInfo });
+    } catch (err) {
+      return c.json({ success: false, message: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  app.post('/api/processes/:pid/refresh', async (c) => {
+    if (!hookManager) return c.json({ success: false, message: 'hook manager is not available' }, 503);
+    const pid = Number(c.req.param('pid'));
+    if (!Number.isInteger(pid) || pid <= 0 || pid > 4_194_304) {
+      return c.json({ success: false, message: 'invalid pid' }, 400);
+    }
+    try {
+      const processInfo = await hookManager.refreshProcess(pid);
       return c.json({ success: processInfo.status !== 'error', process: processInfo });
     } catch (err) {
       return c.json({ success: false, message: err instanceof Error ? err.message : String(err) }, 500);

@@ -253,6 +253,10 @@ export class QqHookClient extends EventEmitter {
     return this.loginState.loggedIn;
   }
 
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
   get currentUin(): string {
     return this.loginState.uin;
   }
@@ -289,19 +293,35 @@ export class QqHookClient extends EventEmitter {
    * opening the pipe, so probing cannot disturb the first real client connect.
    */
   static async probePipe(pid: number): Promise<boolean> {
+    const live = await QqHookClient.listLivePipes();
+    return live.has(pid);
+  }
+
+  /**
+   * Enumerate every PID currently hosting a SnowLuma `mojo.<pid>.control` pipe
+   * in a single filesystem listing. The HookManager's pipe-watcher uses this
+   * to drive connect/reconnect decisions without per-PID stat calls.
+   */
+  static async listLivePipes(): Promise<Set<number>> {
+    const result = new Set<number>();
     try {
-      const pipeFileName = process.platform === 'win32'
-        ? `mojo.${pid}.control`
-        : `mojo.${pid}.control.sock`;
       if (process.platform === 'win32') {
         const names = await fs.readdir('\\\\.\\pipe\\');
-        return names.some(name => name.toLowerCase() === pipeFileName.toLowerCase());
+        for (const name of names) {
+          const m = /^mojo\.(\d+)\.control$/i.exec(name);
+          if (m) result.add(Number(m[1]));
+        }
+      } else {
+        const names = await fs.readdir(linuxRuntimeDir());
+        for (const name of names) {
+          const m = /^mojo\.(\d+)\.control\.sock$/.exec(name);
+          if (m) result.add(Number(m[1]));
+        }
       }
-      const names = await fs.readdir(linuxRuntimeDir());
-      return names.includes(pipeFileName);
     } catch {
-      return false;
+      /* directory missing or inaccessible — treat as no live pipes */
     }
+    return result;
   }
 
   async connect(): Promise<QqHookHello> {

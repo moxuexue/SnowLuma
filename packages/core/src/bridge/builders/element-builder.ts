@@ -54,11 +54,21 @@ function makeMentionElem(element: MessageElement): ProtoElem {
 }
 
 function makeReplyElem(element: MessageElement): ProtoElem {
-  return {
-    srcMsg: {
-      origSeqs: [element.replySeq! & 0xFFFFFFFF],
-    } as any,
+  const seq = element.replySeq! & 0xFFFFFFFF;
+  
+  const srcMsg: any = {
+    origSeqs: [seq],
   };
+  
+  // Add additional fields if available for better reply display
+  if (element.replySenderUin) {
+    srcMsg.senderUin = BigInt(element.replySenderUin);
+  }
+  if (element.replyTime) {
+    srcMsg.time = element.replyTime;
+  }
+  
+  return { srcMsg };
 }
 
 function makeJsonElem(element: MessageElement): ProtoElem {

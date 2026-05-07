@@ -7,6 +7,7 @@ import type { JsonValue, JsonObject } from './types';
 
 export interface ParseMessageOptions {
   resolveReplySequence?: (replyMessageId: number) => number | null;
+  resolveReplyMeta?: (replyMessageId: number) => { senderUin: number; time: number; random: number } | null;
   musicSignUrl?: string;
 }
 
@@ -102,7 +103,23 @@ async function segmentToElement(type: string, data: Record<string, unknown>, opt
       if (options?.resolveReplySequence) {
         const resolved = options.resolveReplySequence(id);
         if (typeof resolved === 'number' && resolved > 0) {
-          return { type: 'reply', replySeq: resolved };
+          const element: MessageElement = { 
+            type: 'reply', 
+            replySeq: resolved,
+            replyMessageId: id  // Keep the original messageId for logging
+          };
+          
+          // Try to get additional meta info for better reply display
+          if (options?.resolveReplyMeta) {
+            const meta = options.resolveReplyMeta(id);
+            if (meta) {
+              element.replySenderUin = meta.senderUin;
+              element.replyTime = meta.time;
+              element.replyRandom = meta.random;
+            }
+          }
+          
+          return element;
         }
       }
 

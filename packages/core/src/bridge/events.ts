@@ -13,6 +13,10 @@ export interface MessageElement {
   fileName?: string;
   fileSize?: number;
   replySeq?: number;
+  replyMessageId?: number;  // For reply: original message ID (for logging)
+  replySenderUin?: number;  // For reply: original sender's UIN
+  replyTime?: number;       // For reply: original message timestamp
+  replyRandom?: number;     // For reply: original message random/msgId
   url?: string;
   subType?: number;
   duration?: number;

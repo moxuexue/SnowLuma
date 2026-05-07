@@ -14,7 +14,7 @@ export interface HookProcessInfo {
   connected: boolean;
   loggedIn: boolean;
   uin: string;
-  status: 'available' | 'loading' | 'loaded' | 'online' | 'error' | 'disconnected';
+  status: 'available' | 'loading' | 'connecting' | 'loaded' | 'online' | 'error' | 'disconnected';
   error: string;
   method: string;
 }
@@ -81,7 +81,14 @@ export interface SystemInfo {
     used: number;
     usagePercent: number;
   };
-  gpus: { name: string; vendor: string }[];
+  runtime: {
+    pid: number;
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+    arrayBuffers: number;
+  };
 }
 
 export interface LogEntry {

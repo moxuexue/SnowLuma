@@ -8,6 +8,7 @@ import { ConfigPage } from '@/components/pages/config-page';
 import { LogsPage } from '@/components/pages/logs-page';
 import { SettingsPage } from '@/components/pages/settings-page';
 import { ChangePasswordPage, type PasswordRule } from '@/components/pages/change-password-page';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import type { Page } from '@/components/layout/sidebar';
 import type { HookProcessInfo, OneBotConfig, QQInfo, SystemInfo } from '@/types';
 
@@ -39,7 +40,12 @@ function AppInner() {
 
   const [processLoadingPid, setProcessLoadingPid] = useState<number | null>(null);
   const [processUnloadingPid, setProcessUnloadingPid] = useState<number | null>(null);
+  const [processRefreshingPid, setProcessRefreshingPid] = useState<number | null>(null);
   const [processActionStatus, setProcessActionStatus] = useState('');
+  const [unloadFailedAlert, setUnloadFailedAlert] = useState<{ pid: number; error: string } | null>(null);
+  // Tracks PIDs with an in-flight load/unload/refresh request so the UI can
+  // collapse spam-clicks instead of firing a second concurrent request.
+  const inflightProcessOps = useRef(new Set<number>());
 
   const [selectedUin, setSelectedUin] = useState<string | null>(null);
   const [config, setConfig] = useState<OneBotConfig | null>(null);
@@ -224,35 +230,69 @@ function AppInner() {
   }, [fetchApi]);
 
   const handleLoadProcess = useCallback(async (pid: number) => {
+    if (inflightProcessOps.current.has(pid)) return;
+    inflightProcessOps.current.add(pid);
     setProcessLoadingPid(pid);
     setProcessActionStatus(`正在向进程 ${pid} 加载 SnowLuma…`);
     try {
       const res = await fetchApi(`/api/processes/${pid}/load`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '加载失败');
-      setProcessActionStatus(`已向进程 ${pid} 注入 SnowLuma`);
+      if (!res.ok) throw new Error(data.message || data.error || '加载失败');
+      setProcessActionStatus(`已向进程 ${pid} 注入 SnowLuma，等待管道连接…`);
       await refreshProcesses();
     } catch (e) {
       setProcessActionStatus(`加载失败：${(e as Error).message}`);
     } finally {
+      inflightProcessOps.current.delete(pid);
       setProcessLoadingPid(null);
       setTimeout(() => setProcessActionStatus(''), 4000);
     }
   }, [fetchApi, refreshProcesses]);
 
   const handleUnloadProcess = useCallback(async (pid: number) => {
+    if (inflightProcessOps.current.has(pid)) return;
+    inflightProcessOps.current.add(pid);
     setProcessUnloadingPid(pid);
     setProcessActionStatus(`正在从进程 ${pid} 卸载…`);
     try {
       const res = await fetchApi(`/api/processes/${pid}/unload`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '卸载失败');
-      setProcessActionStatus(`已从进程 ${pid} 卸载`);
+      if (!res.ok) throw new Error(data.message || data.error || '卸载失败');
+      
+      // Check if unload actually failed (pipe still exists)
+      if (data.process?.status === 'connecting' && data.process?.error) {
+        setUnloadFailedAlert({ pid, error: data.process.error });
+        setProcessActionStatus(`进程 ${pid} 卸载失败`);
+      } else {
+        setProcessActionStatus(`已从进程 ${pid} 卸载`);
+      }
+      
       await refreshProcesses();
     } catch (e) {
       setProcessActionStatus(`卸载失败：${(e as Error).message}`);
     } finally {
+      inflightProcessOps.current.delete(pid);
       setProcessUnloadingPid(null);
+      setTimeout(() => setProcessActionStatus(''), 4000);
+    }
+  }, [fetchApi, refreshProcesses]);
+
+  const handleRefreshProcess = useCallback(async (pid: number) => {
+    if (inflightProcessOps.current.has(pid)) return;
+    inflightProcessOps.current.add(pid);
+    setProcessRefreshingPid(pid);
+    setProcessActionStatus(`正在刷新进程 ${pid} 的管道状态…`);
+    try {
+      const res = await fetchApi(`/api/processes/${pid}/refresh`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || '刷新失败');
+      setProcessActionStatus(`已刷新进程 ${pid} 的管道状态`);
+      await refreshProcesses();
+    } catch (e) {
+      setProcessActionStatus(`刷新失败：${(e as Error).message}`);
+    } finally {
+      inflightProcessOps.current.delete(pid);
+      setProcessRefreshingPid(null);
       setTimeout(() => setProcessActionStatus(''), 4000);
     }
   }, [fetchApi, refreshProcesses]);
@@ -321,12 +361,14 @@ function AppInner() {
               processList={processList}
               processLoadingPid={processLoadingPid}
               processUnloadingPid={processUnloadingPid}
+              processRefreshingPid={processRefreshingPid}
               processActionStatus={processActionStatus}
               systemInfo={systemInfo}
               onRefreshProcesses={refreshProcesses}
               onRefreshSystem={refreshSystem}
               onLoadProcess={handleLoadProcess}
               onUnloadProcess={handleUnloadProcess}
+              onRefreshProcess={handleRefreshProcess}
             />
           )}
           {active === 'config' && (
@@ -344,6 +386,25 @@ function AppInner() {
           {active === 'settings' && <SettingsPage fetchApi={fetchApi} onLogout={handleLogout} />}
         </MainLayout>
       )}
+
+      <ConfirmDialog
+        open={!!unloadFailedAlert}
+        onOpenChange={(open) => !open && setUnloadFailedAlert(null)}
+        title="卸载失败"
+        description={
+          unloadFailedAlert ? (
+            <>
+              <p>进程 {unloadFailedAlert.pid} 的 SnowLuma DLL 卸载失败。</p>
+              <p className="mt-2 text-sm">{unloadFailedAlert.error}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                系统将继续尝试重新连接该进程。如需彻底卸载，请重启 QQ 进程。
+              </p>
+            </>
+          ) : null
+        }
+        confirmText="知道了"
+        onConfirm={() => setUnloadFailedAlert(null)}
+      />
     </TooltipProvider>
   );
 }
