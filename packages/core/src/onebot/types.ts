@@ -19,47 +19,72 @@ export interface OneBotRequest {
   echo?: JsonValue;
 }
 
-export interface WsServerEndpoint {
-  name?: string;
-  host: string;
+export type WsRole = 'api' | 'event' | 'universal';
+
+export type MessageFormat = 'array' | 'string';
+
+export type NetworkKind = 'httpServers' | 'httpClients' | 'wsServers' | 'wsClients';
+
+/**
+ * Fields shared by every network adapter. `messageFormat` and
+ * `reportSelfMessage` live on the adapter itself — there is no global default
+ * fallback; each adapter is fully self-describing.
+ *
+ * The `name` is a free-form identifier scoped to the adapter's array; it is
+ * used for hot-reload bookkeeping and as a label in logs / WebUI.
+ */
+interface NetworkBase {
+  name: string;
+  /** When `false`, the adapter is configured but inactive. Defaults to `true`. */
+  enabled?: boolean;
+  accessToken?: string;
+  /** Output format for this adapter. */
+  messageFormat: MessageFormat;
+  /** When `true`, this adapter receives `post_type='message_sent'` self events. */
+  reportSelfMessage: boolean;
+}
+
+export interface HttpServerNetwork extends NetworkBase {
+  host?: string;
   port: number;
   path?: string;
-  role?: WsRole;
-  accessToken?: string;
 }
 
-export interface HttpServerEndpoint {
-  name?: string;
-  host: string;
-  port: number;
-  path?: string;
-  accessToken?: string;
-}
-
-export interface WsClientEndpoint {
-  name?: string;
+export interface HttpClientNetwork extends NetworkBase {
   url: string;
-  role?: WsRole;
-  reconnectIntervalMs?: number;
-  accessToken?: string;
-}
-
-export interface HttpPostEndpoint {
-  name?: string;
-  url: string;
-  accessToken?: string;
   timeoutMs?: number;
 }
 
-export interface OneBotConfig {
-  httpServers: HttpServerEndpoint[];
-  httpPostEndpoints: HttpPostEndpoint[];
-  wsServers: WsServerEndpoint[];
-  wsClients: WsClientEndpoint[];
-  musicSignUrl?: string;
+export interface WsServerNetwork extends NetworkBase {
+  host?: string;
+  port: number;
+  path?: string;
+  role?: WsRole;
 }
 
-export type WsRole = 'api' | 'event' | 'universal';
+export interface WsClientNetwork extends NetworkBase {
+  url: string;
+  role?: WsRole;
+  reconnectIntervalMs?: number;
+}
+
+/**
+ * Network adapters grouped by type. Each adapter is identified by `name`
+ * within its own array; hot-reload works on a per-(kind, name) basis.
+ */
+export interface OneBotNetworks {
+  httpServers: HttpServerNetwork[];
+  httpClients: HttpClientNetwork[];
+  wsServers: WsServerNetwork[];
+  wsClients: WsClientNetwork[];
+}
+
+/** Per-UIN OneBot configuration. */
+export interface OneBotConfig {
+  networks: OneBotNetworks;
+  /** Music card signing service URL (optional). */
+  musicSignUrl?: string;
+}
 
 export interface MessageMeta {
   isGroup: boolean;

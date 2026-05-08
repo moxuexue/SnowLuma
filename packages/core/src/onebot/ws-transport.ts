@@ -1,20 +1,44 @@
 import { WebSocket, WebSocketServer } from '@snowluma/websocket';
 import type { IncomingMessage } from 'http';
 import type { ApiHandler } from './api-handler';
-import type { JsonObject, OneBotConfig, WsClientEndpoint, WsRole, WsServerEndpoint } from './types';
+import type { JsonObject, OneBotConfig, WsClientNetwork, WsRole, WsServerNetwork } from './types';
 import { createLogger } from '../utils/logger';
+import {
+  buildDispatchPayload,
+  pickDispatchJson,
+  resolveReportOptions,
+  shapeEventForAdapter,
+  type DispatchPayload,
+  type EventReportOptions,
+} from './event-filter';
 
 interface ForwardConnection {
   socket: WebSocket;
   role: WsRole;
+  options: EventReportOptions;
+  serverName: string;
 }
 
 interface ReverseConnection {
   socket: WebSocket;
   role: WsRole;
+  options: EventReportOptions;
   endpointUrl: string;
   reconnectIntervalMs: number;
-  key: string;
+  name: string;
+}
+
+interface RunningWsServer {
+  wss: WebSocketServer;
+  signature: string;
+  network: WsServerNetwork;
+  options: EventReportOptions;
+}
+
+interface RunningWsClient {
+  network: WsClientNetwork;
+  signature: string;
+  options: EventReportOptions;
 }
 
 export interface WsTransportContext {
@@ -29,204 +53,242 @@ const log = createLogger('OneBot.WS');
 export class WsTransport {
   private readonly context: WsTransportContext;
 
-  private readonly servers = new Map<string, WebSocketServer>();
+  private readonly servers = new Map<string, RunningWsServer>();
+  private readonly clientStates = new Map<string, RunningWsClient>();
   private readonly forwardConnections = new Map<WebSocket, ForwardConnection>();
-  private readonly reverseConnections = new Set<ReverseConnection>();
-  private readonly reconnectTimers = new Set<NodeJS.Timeout>();
-  private readonly reconnectTimersByKey = new Map<string, NodeJS.Timeout>();
-  private readonly activeReverseClientKeys = new Set<string>();
-  private serverEndpoints: WsServerEndpoint[] = [];
-  private clientEndpoints: WsClientEndpoint[] = [];
-  private desiredClientKeys = new Set<string>();
+  private readonly reverseConnections = new Map<string, ReverseConnection>();
+  private readonly reconnectTimers = new Map<string, NodeJS.Timeout>();
+  private serverNetworks: WsServerNetwork[] = [];
+  private clientNetworks: WsClientNetwork[] = [];
   private stopped = false;
 
   constructor(config: OneBotConfig, context: WsTransportContext) {
-    this.serverEndpoints = [...config.wsServers];
-    this.clientEndpoints = [...config.wsClients];
-    this.desiredClientKeys = new Set(this.clientEndpoints.map(wsClientKey));
+    this.serverNetworks = activeServers(config);
+    this.clientNetworks = activeClients(config);
     this.context = context;
+    for (const network of this.clientNetworks) {
+      this.clientStates.set(network.name, {
+        network,
+        signature: wsClientSignature(network),
+        options: resolveReportOptions(network),
+      });
+    }
   }
 
   start(): void {
     this.stopped = false;
-    this.desiredClientKeys = new Set(this.clientEndpoints.map(wsClientKey));
-    this.startServers();
-    this.startReverseClients();
+    for (const network of this.serverNetworks) this.startServerEndpoint(network);
+    for (const network of this.clientNetworks) this.startClientEndpoint(network.name);
   }
 
   reloadConfig(config: OneBotConfig): void {
-    const nextServers = [...config.wsServers];
-    const nextClients = [...config.wsClients];
-    const nextServerKeys = new Set(nextServers.map(wsServerKey));
-    const nextClientKeys = new Set(nextClients.map(wsClientKey));
-    this.desiredClientKeys = nextClientKeys;
+    const nextServers = activeServers(config);
+    const nextClients = activeClients(config);
+    const nextServerByName = new Map(nextServers.map((n) => [n.name, n] as const));
+    const nextClientByName = new Map(nextClients.map((n) => [n.name, n] as const));
 
-    for (const [key, server] of this.servers) {
-      if (!nextServerKeys.has(key)) {
-        server.close();
-        this.servers.delete(key);
-        log.info('stopped forward server %s', key);
+    // --- WS Servers ---
+    for (const [name, running] of [...this.servers]) {
+      const next = nextServerByName.get(name);
+      if (!next || wsServerSignature(next) !== running.signature) {
+        running.wss.close();
+        this.servers.delete(name);
+        // Drop forward connections that belonged to the closed adapter.
+        for (const [socket, conn] of [...this.forwardConnections]) {
+          if (conn.serverName === name) {
+            safeClose(socket);
+            this.forwardConnections.delete(socket);
+          }
+        }
+        log.info('stopped forward server [%s]', name);
+      } else {
+        // Same binding — refresh options so reload picks up format changes.
+        running.network = next;
+        running.options = resolveReportOptions(next);
+        for (const conn of this.forwardConnections.values()) {
+          if (conn.serverName === name) conn.options = running.options;
+        }
+      }
+    }
+    for (const network of nextServers) {
+      if (!this.servers.has(network.name)) this.startServerEndpoint(network);
+    }
+
+    // --- WS Clients (reverse) ---
+    for (const [name, state] of [...this.clientStates]) {
+      const next = nextClientByName.get(name);
+      const sig = next ? wsClientSignature(next) : null;
+      if (!next || sig !== state.signature) {
+        const conn = this.reverseConnections.get(name);
+        if (conn) {
+          safeClose(conn.socket);
+          this.reverseConnections.delete(name);
+        }
+        const timer = this.reconnectTimers.get(name);
+        if (timer) {
+          clearTimeout(timer);
+          this.reconnectTimers.delete(name);
+        }
+        this.clientStates.delete(name);
+        log.info('stopped reverse client [%s]', name);
+      } else {
+        state.network = next;
+        state.options = resolveReportOptions(next);
+        const conn = this.reverseConnections.get(name);
+        if (conn) conn.options = state.options;
+      }
+    }
+    for (const network of nextClients) {
+      if (!this.clientStates.has(network.name)) {
+        this.clientStates.set(network.name, {
+          network,
+          signature: wsClientSignature(network),
+          options: resolveReportOptions(network),
+        });
+        if (!this.stopped) this.startClientEndpoint(network.name);
       }
     }
 
-    for (const endpoint of nextServers) {
-      if (!this.servers.has(wsServerKey(endpoint))) {
-        this.startServerEndpoint(endpoint);
-      }
-    }
-
-    for (const conn of [...this.reverseConnections]) {
-      if (!nextClientKeys.has(conn.key)) {
-        this.clearReconnectTimer(conn.key);
-        this.activeReverseClientKeys.delete(conn.key);
-        safeClose(conn.socket);
-        this.reverseConnections.delete(conn);
-        log.info('stopped reverse client %s', conn.endpointUrl);
-      }
-    }
-
-    for (const endpoint of nextClients) {
-      const key = wsClientKey(endpoint);
-      if (!this.activeReverseClientKeys.has(key) && !this.reconnectTimersByKey.has(key)) {
-        this.startClientEndpoint(endpoint);
-      }
-    }
-
-    this.serverEndpoints = nextServers;
-    this.clientEndpoints = nextClients;
+    this.serverNetworks = nextServers;
+    this.clientNetworks = nextClients;
   }
 
   stop(): void {
-    this.stopped = true;
-    this.desiredClientKeys.clear();
+    // Final lifecycle broadcast before we mark ourselves stopped.
     this.publishEvent(this.context.buildLifecycleEvent('disable'));
+    this.stopped = true;
 
-    for (const timer of this.reconnectTimers) {
+    for (const timer of this.reconnectTimers.values()) {
       clearTimeout(timer);
     }
     this.reconnectTimers.clear();
-    this.reconnectTimersByKey.clear();
-    this.activeReverseClientKeys.clear();
 
-    for (const [socket] of this.forwardConnections) {
+    for (const socket of this.forwardConnections.keys()) {
       safeClose(socket);
     }
     this.forwardConnections.clear();
 
-    for (const conn of this.reverseConnections) {
+    for (const conn of this.reverseConnections.values()) {
       safeClose(conn.socket);
     }
     this.reverseConnections.clear();
 
-    for (const server of this.servers.values()) {
-      server.close();
+    for (const { wss } of this.servers.values()) {
+      wss.close();
     }
     this.servers.clear();
+    this.clientStates.clear();
   }
 
-  publishEvent(event: JsonObject): void {
-    const payload = JSON.stringify(event);
+  /**
+   * Fan out one canonical event to every event-receiving WS connection.
+   *
+   * The instance pre-builds the {@link DispatchPayload} (two JSON variants at
+   * most) so each connection is served with a single O(1) pick + send rather
+   * than re-shaping or re-serializing the event itself. The raw `event` is
+   * accepted so ad-hoc callers (e.g. `stop()`) can dispatch without allocating
+   * a payload at the call site.
+   */
+  publishEvent(event: JsonObject, payload?: DispatchPayload): void {
+    const dispatch = payload ?? buildDispatchPayload(event);
 
-    for (const { socket, role } of this.forwardConnections.values()) {
-      if (role === 'event' || role === 'universal') {
-        safeSend(socket, payload);
+    for (const conn of this.forwardConnections.values()) {
+      if (conn.role !== 'event' && conn.role !== 'universal') continue;
+      const json = pickDispatchJson(dispatch, conn.options);
+      if (json === null) continue;
+      safeSend(conn.socket, json);
+    }
+
+    for (const conn of this.reverseConnections.values()) {
+      if (conn.role !== 'event' && conn.role !== 'universal') continue;
+      const json = pickDispatchJson(dispatch, conn.options);
+      if (json === null) continue;
+      safeSend(conn.socket, json);
+    }
+  }
+
+  private startServerEndpoint(network: WsServerNetwork): void {
+    const wss = new WebSocketServer({
+      host: network.host ?? '0.0.0.0',
+      port: network.port,
+      path: network.path ?? '/',
+    });
+
+    const running: RunningWsServer = {
+      wss,
+      signature: wsServerSignature(network),
+      network,
+      options: resolveReportOptions(network),
+    };
+    this.servers.set(network.name, running);
+
+    wss.on('listening', () => {
+      log.success('[%s] listening %s:%d%s', network.name, network.host ?? '0.0.0.0', network.port, network.path ?? '/');
+    });
+
+    wss.on('connection', (socket, request) => {
+      if (!isAuthorized(request, running.network.accessToken ?? '')) {
+        safeClose(socket, 1008, 'invalid access token');
+        return;
       }
-    }
 
-    for (const { socket, role } of this.reverseConnections.values()) {
-      if (role === 'event' || role === 'universal') {
-        safeSend(socket, payload);
-      }
-    }
-  }
+      const role = running.network.role ?? classifyForwardRole(request);
+      const conn: ForwardConnection = {
+        socket,
+        role,
+        options: running.options,
+        serverName: running.network.name,
+      };
+      this.forwardConnections.set(socket, conn);
 
-  private startServers(): void {
-    for (const endpoint of this.serverEndpoints) {
-      this.startServerEndpoint(endpoint);
-    }
-  }
-
-  private startServerEndpoint(endpoint: WsServerEndpoint): void {
-      const wss = new WebSocketServer({
-        host: endpoint.host,
-        port: endpoint.port,
-        path: endpoint.path ?? '/',
+      socket.on('message', (raw: Buffer) => {
+        void this.handleApiMessage(socket, role, raw);
       });
 
-      wss.on('listening', () => {
-        const label = endpoint.name ? `[${endpoint.name}] ` : '';
-        log.success('%slistening %s:%d%s', label, endpoint.host, endpoint.port, endpoint.path ?? '/');
+      socket.on('close', () => {
+        this.forwardConnections.delete(socket);
       });
 
-      wss.on('connection', (socket, request) => {
-        if (!isAuthorized(request, endpoint.accessToken ?? '')) {
-          safeClose(socket, 1008, 'invalid access token');
-          return;
-        }
-
-        const role = endpoint.role ?? classifyForwardRole(request);
-        const conn: ForwardConnection = { socket, role };
-        this.forwardConnections.set(socket, conn);
-
-        socket.on('message', (raw: Buffer) => {
-          void this.handleApiMessage(socket, role, raw);
-        });
-
-        socket.on('close', () => {
-          this.forwardConnections.delete(socket);
-        });
-
-        socket.on('error', (error: Error) => {
-          log.warn('forward socket error: %s', error instanceof Error ? error.message : String(error));
-        });
-
-        this.sendBootstrapMetaEvents(socket, role);
+      socket.on('error', (error: Error) => {
+        log.warn('[%s] forward socket error: %s', running.network.name, error instanceof Error ? error.message : String(error));
       });
 
-      wss.on('error', (error: Error) => {
-        log.warn('server error: %s', error instanceof Error ? error.message : String(error));
-      });
+      this.sendBootstrapMetaEvents(socket, role, conn.options);
+    });
 
-      this.servers.set(wsServerKey(endpoint), wss);
+    wss.on('error', (error: Error) => {
+      log.warn('[%s] server error: %s', network.name, error instanceof Error ? error.message : String(error));
+    });
   }
 
-  private startReverseClients(): void {
-    for (const endpoint of this.clientEndpoints) this.startClientEndpoint(endpoint);
-  }
+  private startClientEndpoint(name: string): void {
+    const state = this.clientStates.get(name);
+    if (!state || this.stopped) return;
+    if (this.reverseConnections.has(name) || this.reconnectTimers.has(name)) return;
 
-  private startClientEndpoint(endpoint: WsClientEndpoint): void {
-    const role = endpoint.role ?? 'universal';
-    const reconnectIntervalMs = Math.max(1000, endpoint.reconnectIntervalMs ?? 5000);
-    const key = wsClientKey(endpoint);
-    if (this.activeReverseClientKeys.has(key) || this.reconnectTimersByKey.has(key)) return;
-    this.connectReverseClient(endpoint.url, role, reconnectIntervalMs, endpoint.accessToken ?? '', endpoint.name, key);
-  }
-
-  private connectReverseClient(endpointUrl: string, role: WsRole, reconnectIntervalMs: number, accessToken: string, name?: string, key?: string): void {
-    const connKey = key ?? wsClientPartsKey(endpointUrl, role, reconnectIntervalMs, accessToken);
-    if (this.stopped || !this.desiredClientKeys.has(connKey)) return;
-    if (this.activeReverseClientKeys.has(connKey)) return;
-    this.clearReconnectTimer(connKey);
-    this.activeReverseClientKeys.add(connKey);
-
+    const network = state.network;
+    const role = network.role ?? 'universal';
     const headers: Record<string, string> = {
       'User-Agent': 'OneBot',
       'X-Self-ID': this.context.uin,
       'X-Client-Role': role,
     };
+    if (network.accessToken) headers.Authorization = `Bearer ${network.accessToken}`;
 
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
-    }
-
-    const socket = new WebSocket(endpointUrl, { headers });
-    const conn: ReverseConnection = { socket, role, endpointUrl, reconnectIntervalMs, key: connKey };
-    this.reverseConnections.add(conn);
+    const socket = new WebSocket(network.url, { headers });
+    const conn: ReverseConnection = {
+      socket,
+      role,
+      options: state.options,
+      endpointUrl: network.url,
+      reconnectIntervalMs: Math.max(1000, network.reconnectIntervalMs ?? 5000),
+      name,
+    };
+    this.reverseConnections.set(name, conn);
 
     socket.on('open', () => {
-      const label = name ? `[${name}] ` : '';
-      log.info('%sreverse connected %s', label, endpointUrl);
-      this.sendBootstrapMetaEvents(socket, role);
+      log.info('[%s] reverse connected %s', name, network.url);
+      this.sendBootstrapMetaEvents(socket, role, state.options);
     });
 
     socket.on('message', (raw: Buffer) => {
@@ -234,34 +296,23 @@ export class WsTransport {
     });
 
     socket.on('close', () => {
-      this.reverseConnections.delete(conn);
-      this.activeReverseClientKeys.delete(connKey);
+      this.reverseConnections.delete(name);
       if (this.stopped) return;
-      if (!this.desiredClientKeys.has(connKey)) return;
-      if (this.reconnectTimersByKey.has(connKey)) return;
+      if (!this.clientStates.has(name)) return;
+      if (this.reconnectTimers.has(name)) return;
 
       const timer = setTimeout(() => {
-        this.reconnectTimers.delete(timer);
-        this.reconnectTimersByKey.delete(connKey);
-        if (this.stopped || !this.desiredClientKeys.has(connKey)) return;
-        this.connectReverseClient(endpointUrl, role, reconnectIntervalMs, accessToken, name, connKey);
-      }, reconnectIntervalMs);
+        this.reconnectTimers.delete(name);
+        if (this.stopped || !this.clientStates.has(name)) return;
+        this.startClientEndpoint(name);
+      }, conn.reconnectIntervalMs);
       timer.unref?.();
-      this.reconnectTimers.add(timer);
-      this.reconnectTimersByKey.set(connKey, timer);
+      this.reconnectTimers.set(name, timer);
     });
 
     socket.on('error', (error: Error) => {
-      log.warn('reverse error %s: %s', endpointUrl, error instanceof Error ? error.message : String(error));
+      log.warn('[%s] reverse error %s: %s', name, network.url, error instanceof Error ? error.message : String(error));
     });
-  }
-
-  private clearReconnectTimer(key: string): void {
-    const timer = this.reconnectTimersByKey.get(key);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.reconnectTimersByKey.delete(key);
-    this.reconnectTimers.delete(timer);
   }
 
   private async handleApiMessage(socket: WebSocket, role: WsRole, raw: Buffer | string): Promise<void> {
@@ -274,16 +325,19 @@ export class WsTransport {
     safeSend(socket, response);
   }
 
-  private sendBootstrapMetaEvents(socket: WebSocket, role: WsRole): void {
+  private sendBootstrapMetaEvents(socket: WebSocket, role: WsRole, options: EventReportOptions): void {
     if (role !== 'event' && role !== 'universal') return;
 
-    const connectEvent = this.context.buildLifecycleEvent('connect');
-    const enableEvent = this.context.buildLifecycleEvent('enable');
-    const heartbeatEvent = this.context.buildHeartbeatEvent();
-
-    safeSend(socket, JSON.stringify(connectEvent));
-    safeSend(socket, JSON.stringify(enableEvent));
-    safeSend(socket, JSON.stringify(heartbeatEvent));
+    const events = [
+      this.context.buildLifecycleEvent('connect'),
+      this.context.buildLifecycleEvent('enable'),
+      this.context.buildHeartbeatEvent(),
+    ];
+    for (const event of events) {
+      const shaped = shapeEventForAdapter(event, options);
+      if (!shaped) continue;
+      safeSend(socket, JSON.stringify(shaped));
+    }
   }
 }
 
@@ -308,18 +362,22 @@ function normalizeWsPath(pathValue: string | undefined): string {
   return path.endsWith('/') ? path.slice(0, -1) : path;
 }
 
-function wsServerKey(endpoint: WsServerEndpoint): string {
-  return `${endpoint.host}:${endpoint.port}${normalizeWsPath(endpoint.path)}#${endpoint.role ?? 'auto'}#${endpoint.accessToken ?? ''}`;
+function activeServers(config: OneBotConfig): WsServerNetwork[] {
+  return config.networks.wsServers.filter((n) => n.enabled !== false);
 }
 
-function wsClientPartsKey(endpointUrl: string, role: WsRole, reconnectIntervalMs: number, accessToken: string): string {
-  return `${endpointUrl}#${role}#${reconnectIntervalMs}#${accessToken}`;
+function activeClients(config: OneBotConfig): WsClientNetwork[] {
+  return config.networks.wsClients.filter((n) => n.enabled !== false && !!n.url);
 }
 
-function wsClientKey(endpoint: WsClientEndpoint): string {
-  const role = endpoint.role ?? 'universal';
-  const reconnectIntervalMs = Math.max(1000, endpoint.reconnectIntervalMs ?? 5000);
-  return wsClientPartsKey(endpoint.url, role, reconnectIntervalMs, endpoint.accessToken ?? '');
+function wsServerSignature(network: WsServerNetwork): string {
+  return `${network.host ?? '0.0.0.0'}:${network.port}${normalizeWsPath(network.path)}#${network.role ?? 'auto'}#${network.accessToken ?? ''}`;
+}
+
+function wsClientSignature(network: WsClientNetwork): string {
+  const role = network.role ?? 'universal';
+  const reconnectIntervalMs = Math.max(1000, network.reconnectIntervalMs ?? 5000);
+  return `${network.url}#${role}#${reconnectIntervalMs}#${network.accessToken ?? ''}`;
 }
 
 function isAuthorized(request: IncomingMessage, token: string): boolean {

@@ -77,7 +77,14 @@ export async function initWebUI(
 ): Promise<{ port: number }> {
   const auth = WebuiAuth.load();
   const initialPassword = auth.takeInitialPassword();
-  if (initialPassword) {
+  if (auth.isDevMode()) {
+    log.warn('=========================================');
+    log.warn('WebUI 已进入开发模式 (SNOWLUMA_DEV_MODE=1)');
+    log.warn('固定密码: %s', WebuiAuth.devPassword);
+    log.warn('config/webui.json 不会被读写，强制改密流程已跳过');
+    log.warn('请勿在生产环境启用此模式');
+    log.warn('=========================================');
+  } else if (initialPassword) {
     log.info('=========================================');
     log.info('WebUI 安全认证（首次启动，已生成临时密码）');
     log.info('默认用户: admin');

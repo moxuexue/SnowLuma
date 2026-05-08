@@ -1,0 +1,47 @@
+name: Dispatch Docker Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    environment: SnowLuma
+    steps:
+      - name: Dispatch Docker release request
+        uses: actions/github-script@v7
+        env:
+          RELEASE_REPOSITORY: ${{ vars.DOCKER_RELEASE_REPOSITORY }}
+          DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+        with:
+          github-token: ${{ secrets.DOCKER_RELEASE_TOKEN }}
+          script: |
+            const target = process.env.RELEASE_REPOSITORY;
+            if (!target || !target.includes('/')) {
+              throw new Error('Set SnowLuma environment variable DOCKER_RELEASE_REPOSITORY to owner/repo.');
+            }
+
+            const [owner, repo] = target.split('/');
+            const refName = context.ref.replace('refs/tags/', '');
+            const image = process.env.DOCKER_IMAGE || 'motricseven7/snowluma';
+
+            await github.rest.repos.createDispatchEvent({
+              owner,
+              repo,
+              event_type: 'snowluma-tag-release',
+              client_payload: {
+                snowluma_repository: context.repo.owner + '/' + context.repo.repo,
+                snowluma_ref: context.ref,
+                snowluma_ref_name: refName,
+                snowluma_sha: context.sha,
+                docker_image: image,
+                docker_tag: refName,
+              },
+            });
+
+            core.info(`Dispatched Docker release for ${context.ref} to ${target}.`);

@@ -19,45 +19,54 @@ export interface HookProcessInfo {
   method: string;
 }
 
-export interface HttpServerEndpoint {
-  name?: string;
+export type MessageFormat = 'array' | 'string';
+export type WsRole = 'api' | 'event' | 'universal';
+
+interface NetworkBase {
+  name: string;
+  enabled?: boolean;
+  accessToken?: string;
+  messageFormat: MessageFormat;
+  reportSelfMessage: boolean;
+}
+
+export interface HttpServerNetwork extends NetworkBase {
   host?: string;
-  port?: number;
+  port: number;
   path?: string;
-  accessToken?: string;
 }
 
-export interface WsServerEndpoint {
-  name?: string;
-  host?: string;
-  port?: number;
-  path?: string;
-  role?: string;
-  accessToken?: string;
-}
-
-export interface WsClientEndpoint {
-  name?: string;
-  url?: string;
-  role?: string;
-  reconnectIntervalMs?: number;
-  accessToken?: string;
-}
-
-export interface HttpPostEndpoint {
-  name?: string;
-  url?: string;
-  accessToken?: string;
+export interface HttpClientNetwork extends NetworkBase {
+  url: string;
   timeoutMs?: number;
 }
 
+export interface WsServerNetwork extends NetworkBase {
+  host?: string;
+  port: number;
+  path?: string;
+  role?: WsRole;
+}
+
+export interface WsClientNetwork extends NetworkBase {
+  url: string;
+  role?: WsRole;
+  reconnectIntervalMs?: number;
+}
+
+export interface OneBotNetworks {
+  httpServers: HttpServerNetwork[];
+  httpClients: HttpClientNetwork[];
+  wsServers: WsServerNetwork[];
+  wsClients: WsClientNetwork[];
+}
+
 export interface OneBotConfig {
-  httpServers: HttpServerEndpoint[];
-  httpPostEndpoints: HttpPostEndpoint[];
-  wsServers: WsServerEndpoint[];
-  wsClients: WsClientEndpoint[];
+  networks: OneBotNetworks;
   musicSignUrl?: string;
 }
+
+export type NetworkKind = keyof OneBotNetworks;
 
 export interface SystemInfo {
   hostname: string;

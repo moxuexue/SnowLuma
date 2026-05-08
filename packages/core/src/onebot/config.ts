@@ -1,92 +1,76 @@
 import fs from 'fs';
 import path from 'path';
+import { randomBytes } from 'crypto';
 import type {
-  HttpPostEndpoint,
-  HttpServerEndpoint,
+  HttpClientNetwork,
+  HttpServerNetwork,
   JsonObject,
+  MessageFormat,
   OneBotConfig,
-  WsClientEndpoint,
+  OneBotNetworks,
+  WsClientNetwork,
   WsRole,
-  WsServerEndpoint,
+  WsServerNetwork,
 } from './types';
 
 const CONFIG_DIR = 'config';
 const DEFAULT_CONFIG_PATH = path.join(CONFIG_DIR, 'onebot.json');
+const DEFAULT_ACCESS_TOKEN_BYTES = 32;
 
 export function makeDefaultOneBotConfig(): OneBotConfig {
   return {
-    httpServers: [{ host: '0.0.0.0', port: 3000, path: '/' }],
-    httpPostEndpoints: [],
-    wsServers: [{ host: '0.0.0.0', port: 3001 }],
-    wsClients: [],
+    networks: {
+      httpServers: [{
+        name: 'http-default',
+        host: '0.0.0.0',
+        port: 3000,
+        path: '/',
+        accessToken: generateAccessToken(),
+        messageFormat: 'array',
+        reportSelfMessage: false,
+      }],
+      httpClients: [],
+      wsServers: [{
+        name: 'ws-default',
+        host: '0.0.0.0',
+        port: 3001,
+        path: '/',
+        role: 'universal',
+        accessToken: generateAccessToken(),
+        messageFormat: 'array',
+        reportSelfMessage: false,
+      }],
+      wsClients: [],
+    },
     musicSignUrl: '',
   };
+}
+
+function generateAccessToken(): string {
+  return randomBytes(DEFAULT_ACCESS_TOKEN_BYTES).toString('base64url');
 }
 
 export function loadOneBotConfig(uin: string): OneBotConfig {
   ensureConfigDir();
 
-  const merged = deepClone(toJsonObject(makeDefaultOneBotConfig()));
-  const globalConfig = tryLoadJson(DEFAULT_CONFIG_PATH);
-  if (globalConfig) {
-    deepMerge(merged, globalConfig);
-  }
-
   const perUinPath = path.join(CONFIG_DIR, `onebot_${uin}.json`);
-  const perUinConfig = tryLoadJson(perUinPath);
-  if (perUinConfig) {
-    deepMerge(merged, perUinConfig);
-  }
+  const globalRaw = tryLoadJson(DEFAULT_CONFIG_PATH);
+  const perUinRaw = tryLoadJson(perUinPath);
 
-  const config = fromJson(merged);
-  let shouldSave = !perUinConfig;
+  // Detect legacy on-disk format (top-level per-type arrays). We auto-migrate
+  // these entries into `networks.*` and rewrite the file on the next save.
+  const legacy = !!perUinRaw && hasLegacyTopLevel(perUinRaw);
 
-  // Persist normalized endpoints and generated keys.
-  merged.httpServers = config.httpServers.map((s) => {
-    const out: JsonObject = {
-      host: s.host,
-      port: s.port,
-      path: s.path ?? '/',
-      accessToken: s.accessToken ?? '',
-    };
-    if (s.name) out.name = s.name;
-    return out;
-  });
-  merged.httpPostEndpoints = config.httpPostEndpoints.map((e) => {
-    const out: JsonObject = { url: e.url };
-    if (e.name) out.name = e.name;
-    if (e.accessToken) out.accessToken = e.accessToken;
-    if (typeof e.timeoutMs === 'number') out.timeoutMs = e.timeoutMs;
-    return out;
-  });
-  merged.wsServers = config.wsServers.map((s) => {
-    const out: JsonObject = {
-      host: s.host,
-      port: s.port,
-      path: s.path ?? '/',
-      role: s.role ?? 'universal',
-      accessToken: s.accessToken ?? '',
-    };
-    if (s.name) out.name = s.name;
-    return out;
-  });
-  merged.wsClients = config.wsClients.map((c) => {
-    const out: JsonObject = {
-      url: c.url,
-      role: c.role ?? 'universal',
-      accessToken: c.accessToken ?? '',
-    };
-    if (c.name) out.name = c.name;
-    if (typeof c.reconnectIntervalMs === 'number' && Number.isFinite(c.reconnectIntervalMs)) {
-      out.reconnectIntervalMs = Math.max(1000, Math.trunc(c.reconnectIntervalMs));
-    }
-    return out;
-  });
-  merged.musicSignUrl = config.musicSignUrl ?? '';
+  const sources: JsonObject[] = [];
+  if (globalRaw) sources.push(globalRaw);
+  if (perUinRaw) sources.push(perUinRaw);
 
-  if (shouldSave) {
-    saveJson(perUinPath, merged);
-  }
+  const config = fromJson(sources);
+
+  // Persist normalized form whenever the file is missing OR was in legacy
+  // format, so downstream code can rely on the unified shape on disk.
+  const shouldSave = !perUinRaw || legacy;
+  if (shouldSave) saveOneBotConfig(uin, config);
 
   return config;
 }
@@ -94,8 +78,7 @@ export function loadOneBotConfig(uin: string): OneBotConfig {
 export function saveOneBotConfig(uin: string, config: OneBotConfig): void {
   ensureConfigDir();
   const perUinPath = path.join(CONFIG_DIR, `onebot_${uin}.json`);
-  const jsonObj = toJsonObject(config);
-  saveJson(perUinPath, jsonObj);
+  saveJson(perUinPath, toJsonObject(config));
 }
 
 function ensureConfigDir(): void {
@@ -103,136 +86,241 @@ function ensureConfigDir(): void {
 }
 
 function toJsonObject(config: OneBotConfig): JsonObject {
+  const nets = config.networks;
   return {
-    httpServers: config.httpServers.map((s) => {
-      const out: JsonObject = { host: s.host, port: s.port, path: s.path ?? '/', accessToken: s.accessToken ?? '' };
-      if (s.name) out.name = s.name;
-      return out;
-    }),
-    httpPostEndpoints: config.httpPostEndpoints.map((e) => {
-      const out: JsonObject = { url: e.url };
-      if (e.name) out.name = e.name;
-      if (e.accessToken) out.accessToken = e.accessToken;
-      if (typeof e.timeoutMs === 'number') out.timeoutMs = e.timeoutMs;
-      return out;
-    }),
-    wsServers: config.wsServers.map((s) => {
-      const out: JsonObject = { host: s.host, port: s.port, path: s.path ?? '/', role: s.role ?? 'universal', accessToken: s.accessToken ?? '' };
-      if (s.name) out.name = s.name;
-      return out;
-    }),
-    wsClients: config.wsClients.map((c) => {
-      const out: JsonObject = {
-        url: c.url,
-        role: c.role ?? 'universal',
-        accessToken: c.accessToken ?? '',
-      };
-      if (c.name) out.name = c.name;
-      if (typeof c.reconnectIntervalMs === 'number' && Number.isFinite(c.reconnectIntervalMs)) {
-        out.reconnectIntervalMs = Math.max(1000, Math.trunc(c.reconnectIntervalMs));
-      }
-      return out;
-    }),
+    networks: {
+      httpServers: nets.httpServers.map(httpServerToJson),
+      httpClients: nets.httpClients.map(httpClientToJson),
+      wsServers: nets.wsServers.map(wsServerToJson),
+      wsClients: nets.wsClients.map(wsClientToJson),
+    },
     musicSignUrl: config.musicSignUrl ?? '',
   };
 }
 
-function fromJson(json: JsonObject): OneBotConfig {
-  const httpServers = toHttpServers(json.httpServers);
-  const httpPostEndpoints = toHttpPostEndpoints(json.httpPostEndpoints);
-  const wsServers = toWsServers(json.wsServers);
-  const wsClients = toWsClients(json.wsClients);
+function applyBase(
+  out: JsonObject,
+  n: { name: string; enabled?: boolean; accessToken?: string; messageFormat: MessageFormat; reportSelfMessage: boolean },
+): void {
+  out.name = n.name;
+  if (n.enabled === false) out.enabled = false;
+  if (n.accessToken) out.accessToken = n.accessToken;
+  out.messageFormat = n.messageFormat;
+  out.reportSelfMessage = n.reportSelfMessage;
+}
 
+function httpServerToJson(n: HttpServerNetwork): JsonObject {
+  const out: JsonObject = {};
+  applyBase(out, n);
+  out.host = n.host ?? '0.0.0.0';
+  out.port = n.port;
+  out.path = n.path ?? '/';
+  return out;
+}
+
+function httpClientToJson(n: HttpClientNetwork): JsonObject {
+  const out: JsonObject = {};
+  applyBase(out, n);
+  out.url = n.url;
+  if (typeof n.timeoutMs === 'number' && n.timeoutMs > 0) out.timeoutMs = n.timeoutMs;
+  return out;
+}
+
+function wsServerToJson(n: WsServerNetwork): JsonObject {
+  const out: JsonObject = {};
+  applyBase(out, n);
+  out.host = n.host ?? '0.0.0.0';
+  out.port = n.port;
+  out.path = n.path ?? '/';
+  out.role = n.role ?? 'universal';
+  return out;
+}
+
+function wsClientToJson(n: WsClientNetwork): JsonObject {
+  const out: JsonObject = {};
+  applyBase(out, n);
+  out.url = n.url;
+  out.role = n.role ?? 'universal';
+  out.reconnectIntervalMs =
+    typeof n.reconnectIntervalMs === 'number' && Number.isFinite(n.reconnectIntervalMs)
+      ? Math.max(1000, Math.trunc(n.reconnectIntervalMs))
+      : 5000;
+  return out;
+}
+
+function fromJson(sources: JsonObject[]): OneBotConfig {
+  // Legacy top-level scalars are pulled DOWN into each adapter on the first
+  // load: the on-disk schema has no globals anymore, every adapter is
+  // self-describing. We compute the legacy fallbacks here so that adapters
+  // missing `messageFormat`/`reportSelfMessage` inherit them once and the
+  // file is rewritten in normalized form.
+  let legacyFormat: MessageFormat | undefined;
+  let legacyReport: boolean | undefined;
+  let musicSignUrl = '';
+  for (const src of sources) {
+    const mf = parseMessageFormat(src.messageFormat);
+    if (mf) legacyFormat = mf;
+    if (typeof src.reportSelfMessage === 'boolean') legacyReport = src.reportSelfMessage;
+    if (typeof src.musicSignUrl === 'string') musicSignUrl = src.musicSignUrl;
+  }
+  const inheritedFormat: MessageFormat = legacyFormat ?? 'array';
+  const inheritedReport: boolean = legacyReport ?? false;
+
+  // Pluck per-type arrays from each source: prefer `networks.<kind>` over
+  // legacy top-level arrays, but accept both. Later sources override earlier
+  // ones at the network level (last write wins per `(kind, name)` pair).
+  const adapterDefaults = { messageFormat: inheritedFormat, reportSelfMessage: inheritedReport };
+  const httpServers = collectByName<HttpServerNetwork>(sources, 'httpServers', (raw) => parseHttpServer(raw, adapterDefaults));
+  const httpClients = collectByName<HttpClientNetwork>(sources, 'httpClients', (raw) => parseHttpClient(raw, adapterDefaults), 'httpPostEndpoints');
+  const wsServers = collectByName<WsServerNetwork>(sources, 'wsServers', (raw) => parseWsServer(raw, adapterDefaults));
+  const wsClients = collectByName<WsClientNetwork>(sources, 'wsClients', (raw) => parseWsClient(raw, adapterDefaults));
+
+  // Seed defaults if all four arrays are empty (brand-new install).
+  if (
+    httpServers.length === 0 &&
+    httpClients.length === 0 &&
+    wsServers.length === 0 &&
+    wsClients.length === 0
+  ) {
+    const defaults = makeDefaultOneBotConfig().networks;
+    httpServers.push(...defaults.httpServers);
+    wsServers.push(...defaults.wsServers);
+  }
+
+  const networks: OneBotNetworks = { httpServers, httpClients, wsServers, wsClients };
+  return { networks, musicSignUrl };
+}
+
+function collectByName<T extends { name: string }>(
+  sources: JsonObject[],
+  kind: keyof OneBotNetworks,
+  parse: (raw: JsonObject) => T | null,
+  legacyKey?: string,
+): T[] {
+  const byName = new Map<string, T>();
+  const order: string[] = [];
+
+  let counter = 0;
+  const ingest = (rawArr: unknown): void => {
+    if (!Array.isArray(rawArr)) return;
+    for (const raw of rawArr) {
+      if (!isObject(raw)) continue;
+      const parsed = parse(raw);
+      if (!parsed) continue;
+      const name = parsed.name && parsed.name.trim() ? parsed.name.trim() : pickAutoName(kind, byName, ++counter);
+      parsed.name = name;
+      if (!byName.has(name)) order.push(name);
+      byName.set(name, parsed);
+    }
+  };
+
+  for (const src of sources) {
+    const nested = isObject(src.networks) ? (src.networks as JsonObject)[kind] : undefined;
+    ingest(nested);
+    if (legacyKey) ingest(src[legacyKey]);
+    ingest(src[kind]);
+  }
+
+  return order.map((n) => byName.get(n)!);
+}
+
+function pickAutoName(kind: keyof OneBotNetworks, used: Map<string, unknown>, counter: number): string {
+  const prefix =
+    kind === 'httpServers' ? 'http' :
+    kind === 'httpClients' ? 'httppost' :
+    kind === 'wsServers' ? 'ws' :
+    'wsclient';
+  let candidate = `${prefix}-${counter}`;
+  while (used.has(candidate)) {
+    counter += 1;
+    candidate = `${prefix}-${counter}`;
+  }
+  return candidate;
+}
+
+interface AdapterDefaults {
+  messageFormat: MessageFormat;
+  reportSelfMessage: boolean;
+}
+
+function parseBase(value: JsonObject, defaults: AdapterDefaults) {
   return {
-    httpServers: httpServers.length > 0 ? httpServers : [{ host: '0.0.0.0', port: 3000, path: '/' }],
-    httpPostEndpoints,
-    wsServers: wsServers.length > 0 ? wsServers : [{ host: '0.0.0.0', port: 3001 }],
-    wsClients,
-    musicSignUrl: typeof json.musicSignUrl === 'string' ? json.musicSignUrl : '',
+    name: asString(value.name),
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : undefined,
+    accessToken: asString(value.accessToken) || undefined,
+    messageFormat: parseMessageFormat(value.messageFormat) ?? defaults.messageFormat,
+    reportSelfMessage:
+      typeof value.reportSelfMessage === 'boolean' ? value.reportSelfMessage : defaults.reportSelfMessage,
   };
 }
 
-function toHttpServers(value: unknown): HttpServerEndpoint[] {
-  if (!Array.isArray(value)) return [];
-  const result: HttpServerEndpoint[] = [];
-
-  for (const item of value) {
-    if (!isObject(item)) continue;
-    const host = asString(item.host, '0.0.0.0');
-    const port = asNumber(item.port, 3000);
-    const pathValue = asString(item.path, '/');
-    const endpoint: HttpServerEndpoint = { host, port, path: pathValue };
-    const name = asString(item.name);
-    if (name) endpoint.name = name;
-    const token = asString(item.accessToken);
-    if (token) endpoint.accessToken = token;
-    result.push(endpoint);
-  }
-
-  return result;
+function parseHttpServer(value: JsonObject, defaults: AdapterDefaults): HttpServerNetwork | null {
+  const port = asNumber(value.port, 0);
+  if (port <= 0) return null;
+  return clean({
+    ...parseBase(value, defaults),
+    host: asString(value.host, '0.0.0.0'),
+    port,
+    path: asString(value.path, '/'),
+  });
 }
 
-function toHttpPostEndpoints(value: unknown): HttpPostEndpoint[] {
-  if (!Array.isArray(value)) return [];
-  const result: HttpPostEndpoint[] = [];
-
-  for (const item of value) {
-    if (!isObject(item)) continue;
-    const url = asString(item.url);
-    if (!url) continue;
-    const endpoint: HttpPostEndpoint = { url };
-    const name = asString(item.name);
-    if (name) endpoint.name = name;
-    const token = asString(item.accessToken);
-    if (token) endpoint.accessToken = token;
-    const timeout = asNumber(item.timeoutMs, 0);
-    if (timeout > 0) endpoint.timeoutMs = timeout;
-    result.push(endpoint);
-  }
-
-  return result;
+function parseHttpClient(value: JsonObject, defaults: AdapterDefaults): HttpClientNetwork | null {
+  const url = asString(value.url);
+  if (!url) return null;
+  const timeout = asNumber(value.timeoutMs, 0);
+  return clean({
+    ...parseBase(value, defaults),
+    url,
+    timeoutMs: timeout > 0 ? timeout : undefined,
+  });
 }
 
-function toWsServers(value: unknown): WsServerEndpoint[] {
-  if (!Array.isArray(value)) return [];
-  const result: WsServerEndpoint[] = [];
-
-  for (const item of value) {
-    if (!isObject(item)) continue;
-    const host = asString(item.host, '0.0.0.0');
-    const port = asNumber(item.port, 3001);
-    const pathValue = asString(item.path, '/');
-    const role = asRole(item.role, 'universal');
-    const endpoint: WsServerEndpoint = { host, port, path: pathValue, role };
-    const name = asString(item.name);
-    if (name) endpoint.name = name;
-    const token = asString(item.accessToken);
-    if (token) endpoint.accessToken = token;
-    result.push(endpoint);
-  }
-
-  return result;
+function parseWsServer(value: JsonObject, defaults: AdapterDefaults): WsServerNetwork | null {
+  const port = asNumber(value.port, 0);
+  if (port <= 0) return null;
+  return clean({
+    ...parseBase(value, defaults),
+    host: asString(value.host, '0.0.0.0'),
+    port,
+    path: asString(value.path, '/'),
+    role: asRole(value.role, 'universal'),
+  });
 }
 
-function toWsClients(value: unknown): WsClientEndpoint[] {
-  if (!Array.isArray(value)) return [];
-  const result: WsClientEndpoint[] = [];
+function parseWsClient(value: JsonObject, defaults: AdapterDefaults): WsClientNetwork | null {
+  const url = asString(value.url);
+  if (!url) return null;
+  const reconnectIntervalMs = asNumber(value.reconnectIntervalMs, 5000);
+  return clean({
+    ...parseBase(value, defaults),
+    url,
+    role: asRole(value.role, 'universal'),
+    reconnectIntervalMs: Math.max(1000, reconnectIntervalMs),
+  });
+}
 
-  for (const item of value) {
-    if (!isObject(item)) continue;
-    const url = asString(item.url);
-    if (!url) continue;
-    const role = asRole(item.role, 'universal');
-    const reconnectIntervalMs = asNumber(item.reconnectIntervalMs, 5000);
-    const endpoint: WsClientEndpoint = { url, role, reconnectIntervalMs };
-    const name = asString(item.name);
-    if (name) endpoint.name = name;
-    const token = asString(item.accessToken);
-    if (token) endpoint.accessToken = token;
-    result.push(endpoint);
+function hasLegacyTopLevel(raw: JsonObject): boolean {
+  return (
+    Array.isArray(raw.httpServers) ||
+    Array.isArray(raw.httpPostEndpoints) ||
+    Array.isArray(raw.wsServers) ||
+    Array.isArray(raw.wsClients) ||
+    typeof raw.messageFormat === 'string' ||
+    typeof raw.reportSelfMessage === 'boolean'
+  );
+}
+
+function parseMessageFormat(value: unknown): MessageFormat | undefined {
+  if (value === 'array' || value === 'string') return value;
+  return undefined;
+}
+
+function clean<T extends Record<string, unknown>>(obj: T): T {
+  for (const key of Object.keys(obj) as (keyof T)[]) {
+    if (obj[key] === undefined) delete obj[key];
   }
-
-  return result;
+  return obj;
 }
 
 function asRole(value: unknown, fallback: WsRole): WsRole {

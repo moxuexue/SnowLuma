@@ -5,7 +5,7 @@ import {
   type ServerResponse,
 } from 'http';
 import type { ApiHandler } from './api-handler';
-import type { HttpServerEndpoint, OneBotConfig } from './types';
+import type { HttpServerNetwork, OneBotConfig } from './types';
 import { createLogger } from '../utils/logger';
 
 export interface HttpTransportContext {
@@ -14,66 +14,74 @@ export interface HttpTransportContext {
 
 const log = createLogger('OneBot.HTTP');
 
+interface RunningServer {
+  server: Server;
+  signature: string;
+  network: HttpServerNetwork;
+}
+
 export class HttpTransport {
   private readonly context: HttpTransportContext;
-  private readonly servers = new Map<string, Server>();
-  private endpoints: HttpServerEndpoint[] = [];
+  private readonly servers = new Map<string, RunningServer>();
+  private networks: HttpServerNetwork[] = [];
 
   constructor(config: OneBotConfig, context: HttpTransportContext) {
-    this.endpoints = [...config.httpServers];
+    this.networks = activeNetworks(config);
     this.context = context;
   }
 
   start(): void {
-    for (const endpoint of this.endpoints) this.startEndpoint(endpoint);
+    for (const network of this.networks) this.startEndpoint(network);
   }
 
   reloadConfig(config: OneBotConfig): void {
-    const nextEndpoints = [...config.httpServers];
-    const nextKeys = new Set(nextEndpoints.map(httpServerKey));
+    const nextNetworks = activeNetworks(config);
+    const nextByName = new Map(nextNetworks.map((n) => [n.name, n] as const));
 
-    for (const [key, server] of this.servers) {
-      if (!nextKeys.has(key)) {
-        server.close();
-        this.servers.delete(key);
-        log.info('stopped %s', key);
+    // Stop adapters that no longer exist or whose binding/auth changed.
+    for (const [name, running] of [...this.servers]) {
+      const next = nextByName.get(name);
+      if (!next || httpServerSignature(next) !== running.signature) {
+        running.server.close();
+        this.servers.delete(name);
+        log.info('stopped [%s]', name);
       }
     }
 
-    for (const endpoint of nextEndpoints) {
-      if (!this.servers.has(httpServerKey(endpoint))) {
-        this.startEndpoint(endpoint);
+    // (Re)start adapters that aren't running yet.
+    for (const network of nextNetworks) {
+      if (!this.servers.has(network.name)) {
+        this.startEndpoint(network);
       }
     }
 
-    this.endpoints = nextEndpoints;
+    this.networks = nextNetworks;
   }
 
   stop(): void {
-    for (const server of this.servers.values()) {
+    for (const { server } of this.servers.values()) {
       server.close();
     }
     this.servers.clear();
   }
 
-  private startEndpoint(endpoint: HttpServerEndpoint): void {
-    const expectedPath = normalizePath(endpoint.path ?? '/');
-    const endpointToken = endpoint.accessToken ?? '';
+  private startEndpoint(network: HttpServerNetwork): void {
+    const expectedPath = normalizePath(network.path ?? '/');
+    const endpointToken = network.accessToken ?? '';
     const server = createServer((req, res) => {
       void this.handleRequest(expectedPath, endpointToken, req, res);
     });
 
     server.on('listening', () => {
-      const label = endpoint.name ? `[${endpoint.name}] ` : '';
-      log.success('%slistening %s:%d%s', label, endpoint.host, endpoint.port, expectedPath);
+      log.success('[%s] listening %s:%d%s', network.name, network.host ?? '0.0.0.0', network.port, expectedPath);
     });
 
     server.on('error', (error) => {
-      log.warn('server error: %s', error instanceof Error ? error.message : String(error));
+      log.warn('[%s] server error: %s', network.name, error instanceof Error ? error.message : String(error));
     });
 
-    server.listen(endpoint.port, endpoint.host);
-    this.servers.set(httpServerKey(endpoint), server);
+    server.listen(network.port, network.host ?? '0.0.0.0');
+    this.servers.set(network.name, { server, signature: httpServerSignature(network), network });
   }
 
   private async handleRequest(expectedPath: string, accessToken: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -162,22 +170,18 @@ export class HttpTransport {
   }
 }
 
-function parseRequestPath(urlValue: string): string {
-  try {
-    return new URL(urlValue, 'http://127.0.0.1').pathname;
-  } catch {
-    return '/';
-  }
-}
-
 function normalizePath(pathValue: string): string {
   const path = pathValue.trim() || '/';
   if (path === '/') return '/';
   return path.endsWith('/') ? path.slice(0, -1) : path;
 }
 
-function httpServerKey(endpoint: HttpServerEndpoint): string {
-  return `${endpoint.host}:${endpoint.port}${normalizePath(endpoint.path ?? '/')}#${endpoint.accessToken ?? ''}`;
+function httpServerSignature(network: HttpServerNetwork): string {
+  return `${network.host ?? '0.0.0.0'}:${network.port}${normalizePath(network.path ?? '/')}#${network.accessToken ?? ''}`;
+}
+
+function activeNetworks(config: OneBotConfig): HttpServerNetwork[] {
+  return config.networks.httpServers.filter((n) => n.enabled !== false);
 }
 
 function isAuthorized(request: IncomingMessage, token: string): boolean {

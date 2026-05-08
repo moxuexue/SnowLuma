@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseMessage } from '../src/onebot/message-parser';
+import { buildSendElems } from '../src/bridge/builders/element-builder';
+import { MentionExtraSendSchema } from '../src/bridge/proto/action';
+import { protoDecode } from '../src/protobuf/decode';
 
 describe('parseMessage', () => {
   describe('plain text', () => {
@@ -92,6 +95,53 @@ describe('parseMessage', () => {
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe('at');
       expect(result[0].targetUin).toBe(12345);
+    });
+
+    it('uses at segment name for display text and preserves uid', async () => {
+      const result = await parseMessage(
+        [{ type: 'at', data: { qq: '123456', name: 'User', uid: 'u_test_uid' } }] as any,
+        false,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        type: 'at',
+        targetUin: 123456,
+        uid: 'u_test_uid',
+        text: '@User ',
+      });
+    });
+
+    it('resolves missing at uid through parse options', async () => {
+      const result = await parseMessage(
+        [{ type: 'at', data: { qq: '123456', name: 'User' } }] as any,
+        false,
+        { resolveMentionUid: async (targetUin) => targetUin === 123456 ? 'u_resolved_uid' : null },
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        type: 'at',
+        targetUin: 123456,
+        uid: 'u_resolved_uid',
+        text: '@User ',
+      });
+    });
+
+    it('encodes mention extra with resolved uid for QQ notification', async () => {
+      const elements = await parseMessage(
+        [{ type: 'at', data: { qq: '123456', name: 'User' } }] as any,
+        false,
+        { resolveMentionUid: () => 'u_resolved_uid' },
+      );
+      const protoElems = await buildSendElems(elements);
+      const reserve = protoElems[0].text?.pbReserve;
+      expect(reserve).toBeInstanceOf(Uint8Array);
+      const extra = protoDecode(reserve as Uint8Array, MentionExtraSendSchema);
+      expect(extra).toMatchObject({
+        type: 2,
+        uin: 123456,
+        uid: 'u_resolved_uid',
+      });
+      expect(protoElems[0].text?.str).toBe('@User ');
     });
 
     it('parses multiple segments', async () => {

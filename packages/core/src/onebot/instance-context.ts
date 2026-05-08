@@ -500,6 +500,7 @@ async function handleSendPrivate(
       }
       return null;
     },
+    resolveMentionUid: (targetUin) => ref.bridge.resolveUserUid(targetUin),
     musicSignUrl: ref.musicSignUrl,
   });
   if (elements.length === 0) throw new Error('message is empty');
@@ -545,6 +546,7 @@ async function handleSendGroup(
       }
       return null;
     },
+    resolveMentionUid: (targetUin) => ref.bridge.resolveUserUid(targetUin, groupId),
     musicSignUrl: ref.musicSignUrl,
   });
   if (elements.length === 0) throw new Error('message is empty');

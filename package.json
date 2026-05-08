@@ -9,6 +9,7 @@
     "build:webui": "pnpm --filter webui build",
     "build:all": "pnpm --filter @snowluma/core build:all && pnpm --filter webui build",
     "dev": "pnpm --filter @snowluma/core dev",
+    "dev:mode": "cd dist && cross-env SNOWLUMA_DEV_MODE=1 SNOWLUMA_DEV_WEBUI=1 node index.mjs",
     "dev:web": "pnpm --filter webui dev",
     "test": "pnpm --filter @snowluma/core test",
     "test:watch": "pnpm --filter @snowluma/core test:watch",
@@ -17,6 +18,7 @@
     "start": "node dist/index.mjs"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "typescript": "catalog:"
   },
   "pnpm": {

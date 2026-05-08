@@ -175,11 +175,22 @@ function AppInner() {
         const data = await res.json();
         const loaded = data?.config ?? data;
         if (cancelled) return;
+        const nets = loaded?.networks ?? {};
+        const legacyFormat = loaded?.messageFormat === 'string' ? 'string' : 'array';
+        const legacyReport = !!loaded?.reportSelfMessage;
+        const normalizeNetwork = <T extends Record<string, unknown>>(item: T) => ({
+          ...item,
+          messageFormat: item.messageFormat === 'string' ? 'string' : legacyFormat,
+          reportSelfMessage:
+            typeof item.reportSelfMessage === 'boolean' ? item.reportSelfMessage : legacyReport,
+        });
         setConfig({
-          httpServers: loaded?.httpServers || [],
-          httpPostEndpoints: loaded?.httpPostEndpoints || [],
-          wsServers: loaded?.wsServers || [],
-          wsClients: loaded?.wsClients || [],
+          networks: {
+            httpServers: Array.isArray(nets.httpServers) ? nets.httpServers.map(normalizeNetwork) : [],
+            httpClients: Array.isArray(nets.httpClients) ? nets.httpClients.map(normalizeNetwork) : [],
+            wsServers: Array.isArray(nets.wsServers) ? nets.wsServers.map(normalizeNetwork) : [],
+            wsClients: Array.isArray(nets.wsClients) ? nets.wsClients.map(normalizeNetwork) : [],
+          },
           musicSignUrl: loaded?.musicSignUrl,
         });
       } catch (e) {

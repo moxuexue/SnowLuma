@@ -29,12 +29,14 @@ export class EventConverter {
     switch (event.kind) {
       case 'friend_message':
         {
+          const isSelf = event.senderUin === selfId;
+          const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(false, event.senderUin, event.msgSeq, PRIVATE_MESSAGE_EVENT);
           const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
         return {
           time: event.time,
           self_id: selfId,
-          post_type: 'message',
+          post_type: postType,
           message_type: 'private',
           sub_type: 'friend',
           message_id: messageId,
@@ -54,12 +56,14 @@ export class EventConverter {
 
       case 'group_message':
         {
+          const isSelf = event.senderUin === selfId;
+          const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(true, event.groupId, event.msgSeq, GROUP_MESSAGE_EVENT);
           const segments = await elementsToJson(event.elements, true, event.groupId, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
         return {
           time: event.time,
           self_id: selfId,
-          post_type: 'message',
+          post_type: postType,
           message_type: 'group',
           sub_type: 'normal',
           message_id: messageId,
@@ -83,12 +87,14 @@ export class EventConverter {
 
       case 'temp_message':
         {
+          const isSelf = event.senderUin === selfId;
+          const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(false, event.senderUin, event.msgSeq, PRIVATE_MESSAGE_EVENT);
           const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
         return {
           time: event.time,
           self_id: selfId,
-          post_type: 'message',
+          post_type: postType,
           message_type: 'private',
           sub_type: 'group',
           message_id: messageId,

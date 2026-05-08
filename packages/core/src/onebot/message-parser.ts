@@ -8,6 +8,7 @@ import type { JsonValue, JsonObject } from './types';
 export interface ParseMessageOptions {
   resolveReplySequence?: (replyMessageId: number) => number | null;
   resolveReplyMeta?: (replyMessageId: number) => { senderUin: number; time: number; random: number } | null;
+  resolveMentionUid?: (targetUin: number) => string | null | Promise<string | null>;
   musicSignUrl?: string;
 }
 
@@ -89,12 +90,25 @@ async function segmentToElement(type: string, data: Record<string, unknown>, opt
       return { type: 'face', faceId: id };
     }
     case 'at': {
-      const qq = String(data.qq ?? '');
+      const qq = String(data.qq ?? '').trim();
       if (qq === 'all') {
         return { type: 'at', targetUin: 0, uid: 'all', text: '@全体成员 ' };
       }
       const uin = parseInt(qq, 10);
-      return uin > 0 ? { type: 'at', targetUin: uin, text: `@${uin} ` } : null;
+      if (uin <= 0) return null;
+
+      const name = String(data.name ?? data.nickname ?? data.card ?? '').trim();
+      let uid = String(data.uid ?? '').trim();
+      if (!uid && options?.resolveMentionUid) {
+        uid = (await options.resolveMentionUid(uin))?.trim() ?? '';
+      }
+
+      return {
+        type: 'at',
+        targetUin: uin,
+        uid: uid || undefined,
+        text: name ? `@${name} ` : `@${uin} `,
+      };
     }
     case 'reply': {
       const id = parseInt(String(data.id ?? '0'), 10);

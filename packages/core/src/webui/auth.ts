@@ -10,6 +10,17 @@ const SCRYPT_N = 16384; // cost
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 
+/**
+ * Fixed credentials used when SNOWLUMA_DEV_MODE=1 is set. The state is kept
+ * entirely in memory and never written to `config/webui.json`, so toggling
+ * dev mode on/off never disturbs the real persisted password.
+ */
+const DEV_PASSWORD = 'snowluma-dev';
+
+export function isDevAuthMode(): boolean {
+  return process.env.SNOWLUMA_DEV_MODE === '1';
+}
+
 export interface WebuiAuthState {
   passwordHash: string; // hex
   passwordSalt: string; // hex
@@ -89,20 +100,35 @@ function atomicWrite(state: WebuiAuthState): void {
 export class WebuiAuth {
   private state: WebuiAuthState;
   private initialPlain: string | null;
+  private readonly devMode: boolean;
 
-  private constructor(state: WebuiAuthState, initialPlain: string | null) {
+  private constructor(state: WebuiAuthState, initialPlain: string | null, devMode: boolean) {
     this.state = state;
     this.initialPlain = initialPlain;
+    this.devMode = devMode;
   }
 
   static load(): WebuiAuth {
+    if (isDevAuthMode()) {
+      const salt = randomBytes(16);
+      const hash = hashPassword(DEV_PASSWORD, salt);
+      const now = new Date().toISOString();
+      const state: WebuiAuthState = {
+        passwordHash: hash.toString('hex'),
+        passwordSalt: salt.toString('hex'),
+        mustChangePassword: false,
+        generatedAt: now,
+        updatedAt: now,
+      };
+      return new WebuiAuth(state, null, true);
+    }
     ensureConfigDir();
     if (fs.existsSync(WEBUI_CONFIG_PATH)) {
       try {
         const raw = fs.readFileSync(WEBUI_CONFIG_PATH, 'utf8');
         const parsed = JSON.parse(raw) as unknown;
         if (isValidState(parsed)) {
-          return new WebuiAuth(parsed, null);
+          return new WebuiAuth(parsed, null, false);
         }
       } catch {
         /* fallthrough — regenerate */
@@ -111,7 +137,17 @@ export class WebuiAuth {
     const initialPassword = randomBytes(8).toString('hex');
     const state = generateInitialState(initialPassword);
     atomicWrite(state);
-    return new WebuiAuth(state, initialPassword);
+    return new WebuiAuth(state, initialPassword, false);
+  }
+
+  /** True when SNOWLUMA_DEV_MODE was active at load time. */
+  isDevMode(): boolean {
+    return this.devMode;
+  }
+
+  /** Fixed dev password (only meaningful when {@link isDevMode} is true). */
+  static get devPassword(): string {
+    return DEV_PASSWORD;
   }
 
   /** Returns the auto-generated initial password if this is a fresh install, else null. */
@@ -143,6 +179,9 @@ export class WebuiAuth {
    * After success, mustChangePassword=false and the file is rewritten on disk.
    */
   setPassword(newPassword: string): void {
+    if (this.devMode) {
+      throw new Error('开发模式 (SNOWLUMA_DEV_MODE=1) 已禁用密码修改');
+    }
     if (!isStrongPassword(newPassword)) {
       throw new Error('密码不符合强度要求');
     }

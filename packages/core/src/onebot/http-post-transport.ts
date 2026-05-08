@@ -1,5 +1,12 @@
-import type { JsonObject, OneBotConfig, HttpPostEndpoint } from './types';
+import type { HttpClientNetwork, JsonObject, OneBotConfig } from './types';
 import { createLogger } from '../utils/logger';
+import {
+  buildDispatchPayload,
+  pickDispatchJson,
+  resolveReportOptions,
+  type DispatchPayload,
+  type EventReportOptions,
+} from './event-filter';
 
 export interface HttpPostTransportContext {
   uin: string;
@@ -9,44 +16,57 @@ export interface HttpPostTransportContext {
 const log = createLogger('OneBot.POST');
 const DEFAULT_TIMEOUT_MS = 5000;
 
+interface ResolvedClient {
+  network: HttpClientNetwork;
+  options: EventReportOptions;
+}
+
 export class HttpPostTransport {
   private readonly context: HttpPostTransportContext;
-  private endpoints: HttpPostEndpoint[] = [];
+  private clients = new Map<string, ResolvedClient>();
   private stopped = false;
 
   constructor(config: OneBotConfig, context: HttpPostTransportContext) {
-    this.endpoints = [...config.httpPostEndpoints];
+    this.clients = resolveClients(config);
     this.context = context;
   }
 
   start(): void {
     this.stopped = false;
-    const count = this.endpoints.length;
-    if (count > 0) {
-      log.info('configured %d HTTP POST endpoint(s)', count);
+    if (this.clients.size > 0) {
+      log.info('configured %d HTTP POST adapter(s): %s', this.clients.size, [...this.clients.keys()].join(', '));
     }
   }
 
   reloadConfig(config: OneBotConfig): void {
-    this.endpoints = [...config.httpPostEndpoints];
-    log.info('reloaded %d HTTP POST endpoint(s)', this.endpoints.length);
+    this.clients = resolveClients(config);
+    log.info('reloaded %d HTTP POST adapter(s)', this.clients.size);
   }
 
   stop(): void {
     this.stopped = true;
   }
 
-  publishEvent(event: JsonObject): void {
-    const endpoints = this.endpoints;
-    if (!endpoints || endpoints.length === 0) return;
+  /**
+   * Forward one canonical event to every active HTTP push client.
+   *
+   * The instance pre-builds the {@link DispatchPayload} so this method only
+   * picks the right pre-serialized variant per client (zero extra
+   * `JSON.stringify` calls). The raw `event` is still kept around because the
+   * quick-operation handler reads structured fields from it.
+   */
+  publishEvent(event: JsonObject, payload?: DispatchPayload): void {
+    if (this.stopped || this.clients.size === 0) return;
 
-    const payload = JSON.stringify(event);
-    for (const endpoint of endpoints) {
-      void this.postEvent(endpoint, payload, event);
+    const dispatch = payload ?? buildDispatchPayload(event);
+    for (const client of this.clients.values()) {
+      const json = pickDispatchJson(dispatch, client.options);
+      if (json === null) continue;
+      void this.postEvent(client.network, json, event);
     }
   }
 
-  private async postEvent(endpoint: HttpPostEndpoint, payload: string, event: JsonObject): Promise<void> {
+  private async postEvent(network: HttpClientNetwork, payload: string, event: JsonObject): Promise<void> {
     if (this.stopped) return;
 
     const headers: Record<string, string> = {
@@ -55,14 +75,14 @@ export class HttpPostTransport {
       'X-Self-ID': this.context.uin,
     };
 
-    if (endpoint.accessToken) {
-      headers['X-Signature'] = await computeHmacSha1(endpoint.accessToken, payload);
+    if (network.accessToken) {
+      headers['X-Signature'] = await computeHmacSha1(network.accessToken, payload);
     }
 
-    const timeoutMs = endpoint.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeoutMs = network.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     try {
-      const response = await fetch(endpoint.url, {
+      const response = await fetch(network.url, {
         method: 'POST',
         headers,
         body: payload,
@@ -79,11 +99,11 @@ export class HttpPostTransport {
           }
         }
       } else {
-        log.warn('POST %s returned %d', endpoint.url, response.status);
+        log.warn('[%s] POST %s returned %d', network.name, network.url, response.status);
       }
     } catch (error) {
       if (!this.stopped) {
-        log.warn('POST %s failed: %s', endpoint.url, error instanceof Error ? error.message : String(error));
+        log.warn('[%s] POST %s failed: %s', network.name, network.url, error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -98,6 +118,19 @@ export class HttpPostTransport {
       log.warn('quick operation failed: %s', error instanceof Error ? error.message : String(error));
     }
   }
+}
+
+function resolveClients(config: OneBotConfig): Map<string, ResolvedClient> {
+  const out = new Map<string, ResolvedClient>();
+  for (const network of config.networks.httpClients) {
+    if (network.enabled === false) continue;
+    if (!network.url) continue;
+    out.set(network.name, {
+      network,
+      options: resolveReportOptions(network),
+    });
+  }
+  return out;
 }
 
 async function computeHmacSha1(secret: string, payload: string): Promise<string> {
