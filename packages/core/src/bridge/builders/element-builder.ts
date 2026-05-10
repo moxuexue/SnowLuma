@@ -14,6 +14,8 @@ import {
   MarkdownDataSchema,
 } from '../proto/action';
 import { uploadImageMsgInfo } from '../highway/image-upload';
+import { uploadPttMsgInfo } from '../highway/ptt-upload';
+import { uploadVideoMsgInfo } from '../highway/video-upload';
 
 type ProtoElem = Partial<ProtoDecoded<typeof ElemSchema>>;
 
@@ -151,10 +153,46 @@ async function makeImageElem(ctx: SendContext, element: MessageElement): Promise
   };
 }
 
+async function makePttElem(ctx: SendContext, element: MessageElement): Promise<ProtoElem> {
+  const isGroup = ctx.groupId !== undefined;
+  const targetIdOrUid = isGroup ? ctx.groupId! : (ctx.userUid ?? '');
+  if (!isGroup && !targetIdOrUid) {
+    throw new Error('private record target uid is missing');
+  }
+
+  const msgInfo = await uploadPttMsgInfo(ctx.bridge, isGroup, targetIdOrUid, element);
+
+  return {
+    commonElem: {
+      serviceType: 48,
+      pbElem: msgInfo,
+      businessType: 22,
+    } as any,
+  };
+}
+
+async function makeVideoElem(ctx: SendContext, element: MessageElement): Promise<ProtoElem> {
+  const isGroup = ctx.groupId !== undefined;
+  const targetIdOrUid = isGroup ? ctx.groupId! : (ctx.userUid ?? '');
+  if (!isGroup && !targetIdOrUid) {
+    throw new Error('private video target uid is missing');
+  }
+
+  const msgInfo = await uploadVideoMsgInfo(ctx.bridge, isGroup, targetIdOrUid, element);
+
+  return {
+    commonElem: {
+      serviceType: 48,
+      pbElem: msgInfo,
+      businessType: 21,
+    } as any,
+  };
+}
+
 /**
  * Build proto Elem objects from an array of MessageElements.
- * Supports: text, face, at, reply, json, xml, markdown, image.
- * Image elements trigger highway upload via the SendContext.
+ * Supports: text, face, at, reply, json, xml, markdown, image, record, video, forward.
+ * Image, record and video elements trigger NTV2 highway upload via the SendContext.
  */
 export async function buildSendElems(elements: MessageElement[], ctx?: SendContext): Promise<ProtoElem[]> {
   const result: ProtoElem[] = [];
@@ -202,8 +240,19 @@ export async function buildSendElems(elements: MessageElement[], ctx?: SendConte
         break;
 
       case 'record':
+        if (ctx) {
+          result.push(await makePttElem(ctx, elem));
+        } else {
+          console.warn('[ElemBuilder] record send requires SendContext');
+        }
+        break;
+
       case 'video':
-        console.warn(`[ElemBuilder] ${elem.type} send not yet implemented`);
+        if (ctx) {
+          result.push(await makeVideoElem(ctx, elem));
+        } else {
+          console.warn('[ElemBuilder] video send requires SendContext');
+        }
         break;
 
       default:

@@ -35,7 +35,7 @@ export function makeDefaultOneBotConfig(): OneBotConfig {
         host: '0.0.0.0',
         port: 3001,
         path: '/',
-        role: 'universal',
+        role: 'Universal',
         accessToken: generateAccessToken(),
         messageFormat: 'array',
         reportSelfMessage: false,
@@ -132,7 +132,7 @@ function wsServerToJson(n: WsServerNetwork): JsonObject {
   out.host = n.host ?? '0.0.0.0';
   out.port = n.port;
   out.path = n.path ?? '/';
-  out.role = n.role ?? 'universal';
+  out.role = n.role ?? 'Universal';
   return out;
 }
 
@@ -140,7 +140,7 @@ function wsClientToJson(n: WsClientNetwork): JsonObject {
   const out: JsonObject = {};
   applyBase(out, n);
   out.url = n.url;
-  out.role = n.role ?? 'universal';
+  out.role = n.role ?? 'Universal';
   out.reconnectIntervalMs =
     typeof n.reconnectIntervalMs === 'number' && Number.isFinite(n.reconnectIntervalMs)
       ? Math.max(1000, Math.trunc(n.reconnectIntervalMs))
@@ -284,7 +284,7 @@ function parseWsServer(value: JsonObject, defaults: AdapterDefaults): WsServerNe
     host: asString(value.host, '0.0.0.0'),
     port,
     path: asString(value.path, '/'),
-    role: asRole(value.role, 'universal'),
+    role: asRole(value.role, 'Universal'),
   });
 }
 
@@ -295,7 +295,7 @@ function parseWsClient(value: JsonObject, defaults: AdapterDefaults): WsClientNe
   return clean({
     ...parseBase(value, defaults),
     url,
-    role: asRole(value.role, 'universal'),
+    role: asRole(value.role, 'Universal'),
     reconnectIntervalMs: Math.max(1000, reconnectIntervalMs),
   });
 }
@@ -324,8 +324,13 @@ function clean<T extends Record<string, unknown>>(obj: T): T {
 }
 
 function asRole(value: unknown, fallback: WsRole): WsRole {
-  const text = asString(value, fallback);
-  return text === 'api' || text === 'event' || text === 'universal' ? text : fallback;
+  // Accept both uppercase (canonical) and lowercase (legacy on-disk) forms.
+  // Lowercase values are auto-migrated to uppercase on the next save.
+  const text = asString(value, fallback).toLowerCase();
+  if (text === 'api') return 'Api';
+  if (text === 'event') return 'Event';
+  if (text === 'universal') return 'Universal';
+  return fallback;
 }
 
 function asString(value: unknown, fallback = ''): string {

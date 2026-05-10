@@ -43,6 +43,10 @@ import {
   NTV2RichMediaRespSchema,
   GroupRecallRequestSchema,
   C2CRecallRequestSchema,
+  SsoReadedReportReqSchema,
+  SetStatusReqSchema,
+  SetStatusRespSchema,
+  OidbSetProfileSchema,
 } from './proto/oidb-action';
 import { FileUploadExtSchema } from './proto/highway';
 import {
@@ -1241,4 +1245,117 @@ export async function recallPrivateMessage(
   }, C2CRecallRequestSchema);
   const result = await bridge.sendRawPacket('trpc.msg.msg_svc.MsgService.SsoC2CRecallMsg', request);
   if (!result.success) throw new Error(result.errorMessage || 'recall private message failed');
+}
+
+// --- Mark message as read ---
+
+export async function markPrivateMessageRead(
+    bridge: Bridge,
+    userId: number,
+    msgSeq: number,
+    timestamp: number = Math.floor(Date.now() / 1000)
+): Promise<void> {
+  const uid = await resolveUserUid(bridge, userId);
+
+  const request = protoEncode({
+    c2cList: [
+      {
+        uid,
+        lastReadTime: BigInt(timestamp),
+        lastReadSeq: BigInt(msgSeq),
+      }
+    ]
+  }, SsoReadedReportReqSchema);
+
+  const result = await bridge.sendRawPacket('trpc.msg.msg_svc.MsgService.SsoReadedReport', request);
+
+  if (!result.success) {
+    throw new Error(result.errorMessage || 'mark private message read failed');
+  }
+}
+
+export async function markGroupMessageRead(
+    bridge: Bridge,
+    groupId: number,
+    msgSeq: number
+): Promise<void> {
+  const request = protoEncode({
+    groupList: [
+      {
+        groupUin: BigInt(groupId),
+        lastReadSeq: BigInt(msgSeq),
+      }
+    ]
+  }, SsoReadedReportReqSchema);
+
+  const result = await bridge.sendRawPacket('trpc.msg.msg_svc.MsgService.SsoReadedReport', request);
+
+  if (!result.success) {
+    throw new Error(result.errorMessage || 'mark group message read failed');
+  }
+}
+
+export async function setOnlineStatus(
+    bridge: Bridge,
+    status: number,
+    extStatus: number = 0,
+    batteryStatus: number = 100
+): Promise<void> {
+  const request = protoEncode({
+    status,
+    extStatus,
+    batteryStatus,
+  }, SetStatusReqSchema);
+
+  const result = await bridge.sendRawPacket('trpc.qq_new_tech.status_svc.StatusService.SetStatus', request);
+
+  if (!result.success) {
+    throw new Error(result.errorMessage || 'set online status failed (network/timeout)');
+  }
+
+  if (result.responseData && result.responseData.length > 0) {
+    const resp = protoDecode(result.responseData, SetStatusRespSchema);
+    if (!resp) {
+      throw new Error(result.errorMessage || 'set online status failed (network/timeout)');
+    }
+    if (resp.errCode !== undefined && resp.errCode !== 0) {
+      throw new Error(resp.errMsg || `set online status failed with errCode: ${resp.errCode}`);
+    }
+  }
+}
+
+export async function setProfile(
+    bridge: Bridge,
+    nickname?: string,
+    personalNote?: string
+): Promise<void> {
+  const uin = BigInt(bridge.qqInfo.uin);
+  const stringProfiles: any[] = [];
+  const intProfiles: any[] = [];
+
+  if (nickname !== undefined) {
+    stringProfiles.push({ fieldId: 20002, value: nickname });
+  }
+
+  if (personalNote !== undefined) {
+    stringProfiles.push({ fieldId: 102, value: personalNote });
+  }
+
+  if (stringProfiles.length === 0 && intProfiles.length === 0) {
+    return;
+  }
+
+  const req = {
+    uin,
+    stringProfiles,
+  };
+
+  await sendOidbAndCheck(
+      bridge,
+      'OidbSvcTrpcTcp.0x112a_2',
+      0x112A,
+      2,
+      req,
+      OidbSetProfileSchema
+  );
 }

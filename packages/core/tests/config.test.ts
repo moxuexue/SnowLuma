@@ -19,7 +19,7 @@ describe('makeDefaultOneBotConfig', () => {
     expect(config.networks.httpClients).toEqual([]);
     expect(config.networks.wsServers).toHaveLength(1);
     expect(config.networks.wsServers[0].port).toBe(3001);
-    expect(config.networks.wsServers[0].role).toBe('universal');
+    expect(config.networks.wsServers[0].role).toBe('Universal');
     expect(config.networks.wsServers[0].accessToken).toMatch(TOKEN_PATTERN);
     expect(config.networks.wsServers[0].messageFormat).toBe('array');
     expect(config.networks.wsServers[0].reportSelfMessage).toBe(false);
@@ -126,6 +126,30 @@ describe('loadOneBotConfig', () => {
     expect(reloaded.networks.httpClients[0].name).toBe('self-mirror');
     expect(reloaded.networks.httpClients[0].messageFormat).toBe('string');
     expect(reloaded.networks.httpClients[0].reportSelfMessage).toBe(true);
+  });
+
+  it('migrates legacy lowercase WsRole values into canonical uppercase form', () => {
+    const uin = '10005';
+    const dir = path.join(tempDir, 'config');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `onebot_${uin}.json`), JSON.stringify({
+      networks: {
+        httpServers: [],
+        httpClients: [],
+        wsServers: [
+          { name: 'ws-legacy', host: '0.0.0.0', port: 3201, path: '/', role: 'universal', messageFormat: 'array', reportSelfMessage: false },
+        ],
+        wsClients: [
+          { name: 'wsc-legacy', url: 'ws://127.0.0.1:8080', role: 'event', messageFormat: 'array', reportSelfMessage: false },
+        ],
+      },
+    }), 'utf8');
+
+    const config = loadOneBotConfig(uin);
+    expect(config.networks.wsServers).toHaveLength(1);
+    expect(config.networks.wsServers[0].role).toBe('Universal');
+    expect(config.networks.wsClients).toHaveLength(1);
+    expect(config.networks.wsClients[0].role).toBe('Event');
   });
 
   it('auto-generates names for legacy entries that lack one', () => {

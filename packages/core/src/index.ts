@@ -25,7 +25,6 @@ async function main() {
     process.env.SNOWLUMA_DEV_WEBUI === '1'
   ) {
     try {
-      log.info('WebUI is enabled, starting...');
       const { initWebUI } = await import('./webui/server');
       await initWebUI(runtimeConfig.webuiPort || 5099, oneBotManager, hookManager);
     } catch (err) {

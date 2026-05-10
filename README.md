@@ -3,7 +3,7 @@
 
 
 ## 关于项目
-项目处于开发初期，仅支持部分功能，持续高速迭代中，仅支持有头。
+项目处于开发初期，仅支持部分功能，高速迭代中，随时可能出现破坏性更新。
 
 ## 鸣谢
 [LagrangeV2](https://github.com/LagrangeDev/LagrangeV2) - Proto

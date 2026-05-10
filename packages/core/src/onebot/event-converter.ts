@@ -5,11 +5,24 @@ import { GROUP_MESSAGE_EVENT, PRIVATE_MESSAGE_EVENT } from './message-id';
 export type ImageUrlResolver = (element: MessageElement, isGroup: boolean) => string;
 export type MediaUrlResolver = (element: MessageElement, isGroup: boolean, sessionId: number) => Promise<string>;
 export type MessageIdResolver = (isGroup: boolean, sessionId: number, sequence: number, eventName: string) => number;
+/**
+ * Side-channel callback invoked every time an image/record segment is
+ * produced, so that callers can keep a lookup index (e.g. for `get_image` /
+ * `get_record`) without having to re-scan the persisted message store.
+ */
+export type MediaSegmentSink = (
+  mediaType: 'image' | 'record',
+  element: MessageElement,
+  data: JsonObject,
+  isGroup: boolean,
+  sessionId: number,
+) => void;
 
 export class EventConverter {
   private imageUrlResolver_: ImageUrlResolver | null = null;
   private mediaUrlResolver_: MediaUrlResolver | null = null;
   private messageIdResolver_: MessageIdResolver | null = null;
+  private mediaSegmentSink_: MediaSegmentSink | null = null;
 
   setImageUrlResolver(resolver: ImageUrlResolver): void {
     this.imageUrlResolver_ = resolver;
@@ -23,6 +36,10 @@ export class EventConverter {
     this.messageIdResolver_ = resolver;
   }
 
+  setMediaSegmentSink(sink: MediaSegmentSink): void {
+    this.mediaSegmentSink_ = sink;
+  }
+
   async convert(instanceUin: string, event: QQEventVariant): Promise<JsonObject | null> {
     const selfId = parseSelfId(instanceUin);
 
@@ -32,7 +49,7 @@ export class EventConverter {
           const isSelf = event.senderUin === selfId;
           const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(false, event.senderUin, event.msgSeq, PRIVATE_MESSAGE_EVENT);
-          const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
+          const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_, this.mediaSegmentSink_);
         return {
           time: event.time,
           self_id: selfId,
@@ -59,7 +76,7 @@ export class EventConverter {
           const isSelf = event.senderUin === selfId;
           const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(true, event.groupId, event.msgSeq, GROUP_MESSAGE_EVENT);
-          const segments = await elementsToJson(event.elements, true, event.groupId, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
+          const segments = await elementsToJson(event.elements, true, event.groupId, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_, this.mediaSegmentSink_);
         return {
           time: event.time,
           self_id: selfId,
@@ -90,7 +107,7 @@ export class EventConverter {
           const isSelf = event.senderUin === selfId;
           const postType = isSelf ? 'message_sent' : 'message';
           const messageId = this.resolveMessageId(false, event.senderUin, event.msgSeq, PRIVATE_MESSAGE_EVENT);
-          const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_);
+          const segments = await elementsToJson(event.elements, false, event.senderUin, this.imageUrlResolver_, this.mediaUrlResolver_, this.messageIdResolver_, this.mediaSegmentSink_);
         return {
           time: event.time,
           self_id: selfId,
@@ -320,10 +337,11 @@ async function elementsToJson(
   resolver?: ImageUrlResolver | null,
   mediaResolver?: MediaUrlResolver | null,
   messageIdResolver?: MessageIdResolver | null,
+  mediaSink?: MediaSegmentSink | null,
 ): Promise<JsonArray> {
   const result: JsonArray = [];
   for (const element of elements) {
-    result.push(await elementToSegment(element, isGroup, sessionId, resolver, mediaResolver, messageIdResolver));
+    result.push(await elementToSegment(element, isGroup, sessionId, resolver, mediaResolver, messageIdResolver, mediaSink));
   }
   return result;
 }
@@ -335,8 +353,9 @@ export async function elementsToOneBotSegments(
   resolver?: ImageUrlResolver | null,
   mediaResolver?: MediaUrlResolver | null,
   messageIdResolver?: MessageIdResolver | null,
+  mediaSink?: MediaSegmentSink | null,
 ): Promise<JsonArray> {
-  return elementsToJson(elements, isGroup, sessionId, resolver, mediaResolver, messageIdResolver);
+  return elementsToJson(elements, isGroup, sessionId, resolver, mediaResolver, messageIdResolver, mediaSink);
 }
 
 async function elementToSegment(
@@ -346,6 +365,7 @@ async function elementToSegment(
   resolver?: ImageUrlResolver | null,
   mediaResolver?: MediaUrlResolver | null,
   messageIdResolver?: MessageIdResolver | null,
+  mediaSink?: MediaSegmentSink | null,
 ): Promise<JsonObject> {
   if (element.type === 'text') {
     return { type: 'text', data: { text: element.text ?? '' } };
@@ -357,13 +377,12 @@ async function elementToSegment(
 
   if (element.type === 'image') {
     const url = resolver ? resolver(element, isGroup) : (element.imageUrl ?? '');
-    return {
-      type: 'image',
-      data: {
-        url,
-        file: element.fileId ?? '',
-      },
+    const data: JsonObject = {
+      url,
+      file: element.fileId ?? '',
     };
+    if (mediaSink) mediaSink('image', element, data, isGroup, sessionId);
+    return { type: 'image', data };
   }
 
   if (element.type === 'at') {
@@ -380,13 +399,12 @@ async function elementToSegment(
 
   if (element.type === 'record') {
     const url = mediaResolver ? await mediaResolver(element, isGroup, sessionId) : (element.url ?? '');
-    return {
-      type: 'record',
-      data: {
-        file: element.fileName ?? element.fileId ?? '',
-        url,
-      },
+    const data: JsonObject = {
+      file: element.fileName ?? element.fileId ?? '',
+      url,
     };
+    if (mediaSink) mediaSink('record', element, data, isGroup, sessionId);
+    return { type: 'record', data };
   }
 
   if (element.type === 'video') {

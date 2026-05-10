@@ -18,6 +18,7 @@ export interface MessageElement {
   replyTime?: number;       // For reply: original message timestamp
   replyRandom?: number;     // For reply: original message random/msgId
   url?: string;
+  thumbUrl?: string;
   subType?: number;
   duration?: number;
   width?: number;

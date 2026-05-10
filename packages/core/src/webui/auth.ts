@@ -43,8 +43,8 @@ export const PASSWORD_RULES: PasswordRule[] = [
   { id: 'no-space', label: '不包含空格', test: (p) => !/\s/.test(p) && p.length > 0 },
 ];
 
-export function evaluatePasswordRules(password: string): { id: string; label: string; met: boolean }[] {
-  return PASSWORD_RULES.map((r) => ({ id: r.id, label: r.label, met: r.test(password) }));
+export function evaluatePasswordRules(password: string): { id: string; label: string; ok: boolean }[] {
+  return PASSWORD_RULES.map((r) => ({ id: r.id, label: r.label, ok: r.test(password) }));
 }
 
 export function isStrongPassword(password: string): boolean {

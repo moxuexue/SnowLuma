@@ -26,18 +26,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.28.0
           run_install: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -76,7 +76,7 @@ jobs:
           tar -czf "SnowLuma-${{ github.ref_name }}-${{ matrix.name }}.tar.gz" -C dist .
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.name }}
           path: SnowLuma-${{ github.ref_name }}-${{ matrix.name }}*
@@ -88,12 +88,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (for git log)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
@@ -157,3 +157,58 @@ jobs:
           overwrite_files: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # Triggers the Docker image build on SnowLuma.Docker.Framework once the
+  # GitHub Release (and its per-arch tarballs) is published, so the Docker
+  # workflow can pull the matching `SnowLuma-<tag>-linux-<arch>-lite.tar.gz`
+  # asset and bake it into the container.
+  #
+  # Chained as a job dependency rather than via `on: release: published`
+  # because workflows triggered by GITHUB_TOKEN cannot fire downstream
+  # workflow events (GitHub anti-loop safeguard). Doing it as `needs: release`
+  # keeps the dispatch under our PAT.
+  dispatch-docker:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: SnowLuma
+    steps:
+      - name: Trigger Docker.Framework workflow_dispatch
+        uses: actions/github-script@v8
+        env:
+          RELEASE_REPOSITORY: ${{ vars.DOCKER_RELEASE_REPOSITORY }}
+          DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+          DOCKER_PLATFORMS: ${{ vars.DOCKER_PLATFORMS }}
+          DOCKER_WORKFLOW: ${{ vars.DOCKER_WORKFLOW }}
+          DOCKER_REF: ${{ vars.DOCKER_REF }}
+        with:
+          github-token: ${{ secrets.SNOWLUMA_TOKEN }}
+          script: |
+            const target = process.env.RELEASE_REPOSITORY;
+            if (!target || !target.includes('/')) {
+              throw new Error('Set SnowLuma environment variable DOCKER_RELEASE_REPOSITORY to owner/repo.');
+            }
+
+            const [owner, repo] = target.split('/');
+            const tag = context.ref.replace('refs/tags/', '');
+            const sourceRepo = context.repo.owner + '/' + context.repo.repo;
+            const image = process.env.DOCKER_IMAGE || 'motricseven7/snowluma';
+            const platforms = process.env.DOCKER_PLATFORMS || 'linux/amd64,linux/arm64';
+            const workflowId = process.env.DOCKER_WORKFLOW || 'docker-image.yml';
+            const ref = process.env.DOCKER_REF || 'main';
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: workflowId,
+              ref,
+              inputs: {
+                image,
+                tag,
+                push: 'true',
+                platforms,
+                snowluma_tag: tag,
+                snowluma_repository: sourceRepo,
+              },
+            });
+
+            core.info(`Dispatched ${workflowId}@${ref} on ${target} for SnowLuma release ${sourceRepo}@${tag} (image=${image}, platforms=${platforms}).`);

@@ -336,7 +336,7 @@ export function ConfigPage({
                   />
                   <SelectField
                     label="角色"
-                    value={item.role ?? 'universal'}
+                    value={item.role ?? 'Universal'}
                     options={WS_ROLE_OPTIONS}
                     onChange={(v) => patch({ role: v })}
                     className="sm:w-32"
@@ -355,7 +355,7 @@ export function ConfigPage({
                 host: '0.0.0.0',
                 port: 3001,
                 path: '/',
-                role: 'universal' as WsRole,
+                role: 'Universal' as WsRole,
                 accessToken: generateAccessToken(),
                 messageFormat: 'array',
                 reportSelfMessage: false,
@@ -381,7 +381,7 @@ export function ConfigPage({
                   />
                   <SelectField
                     label="角色"
-                    value={item.role ?? 'universal'}
+                    value={item.role ?? 'Universal'}
                     options={WS_ROLE_OPTIONS}
                     onChange={(v) => patch({ role: v })}
                     className="sm:w-32"
@@ -405,7 +405,7 @@ export function ConfigPage({
               defaultEntry={(suffix) => ({
                 name: `wsclient-${suffix}`,
                 url: 'ws://127.0.0.1:8080/ws',
-                role: 'universal' as WsRole,
+                role: 'Universal' as WsRole,
                 reconnectIntervalMs: 5000,
                 messageFormat: 'array',
                 reportSelfMessage: false,
@@ -559,9 +559,9 @@ const ADAPTER_REPORT_OPTIONS: ReadonlyArray<SegmentedOption<'on' | 'off'>> = [
 ];
 
 const WS_ROLE_OPTIONS: ReadonlyArray<SegmentedOption<WsRole>> = [
-  { value: 'universal', label: 'universal' },
-  { value: 'event', label: 'event' },
-  { value: 'api', label: 'api' },
+  { value: 'Universal', label: 'Universal' },
+  { value: 'Event', label: 'Event' },
+  { value: 'Api', label: 'Api' },
 ];
 
 interface BaseAdapter {

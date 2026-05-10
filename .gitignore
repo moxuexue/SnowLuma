@@ -7,6 +7,10 @@ node_modules/
 dist/
 **/dist/
 .vscode/
+.idea/
+
+/config/
+/data/
 
 # macOS metadata
 .DS_Store

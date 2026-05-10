@@ -78,21 +78,13 @@ export async function initWebUI(
   const auth = WebuiAuth.load();
   const initialPassword = auth.takeInitialPassword();
   if (auth.isDevMode()) {
-    log.warn('=========================================');
-    log.warn('WebUI 已进入开发模式 (SNOWLUMA_DEV_MODE=1)');
-    log.warn('固定密码: %s', WebuiAuth.devPassword);
-    log.warn('config/webui.json 不会被读写，强制改密流程已跳过');
-    log.warn('请勿在生产环境启用此模式');
-    log.warn('=========================================');
+    log.warn('dev mode enabled: password=%s', WebuiAuth.devPassword);
+    log.warn('dev mode skips config/webui.json and password rotation');
   } else if (initialPassword) {
-    log.info('=========================================');
-    log.info('WebUI 安全认证（首次启动，已生成临时密码）');
-    log.info('默认用户: admin');
-    log.info('临时密码: %s', initialPassword);
-    log.info('请使用该密码登录后立即设置强密码（≥10 位、含大小写、特殊符号、不含空格）');
-    log.info('=========================================');
+    log.info('initial credentials: user=admin password=%s', initialPassword);
+    log.info('password change required after first login');
   } else if (auth.mustChangePassword()) {
-    log.warn('WebUI 仍未完成强制改密，登录后须立即修改密码。');
+    log.warn('password change is still required');
   }
 
   const app = new Hono();
@@ -216,7 +208,7 @@ export async function initWebUI(
         sessionTokens.delete(tok);
       }
     }
-    log.info('WebUI 密码已更新（强制改密流程完成）');
+    log.info('password updated');
     return c.json({ success: true });
   });
 
@@ -458,12 +450,12 @@ export async function initWebUI(
 
   const finalPort = await findAvailablePort(desiredPort);
   if (finalPort !== desiredPort) {
-    log.warn('端口 %d 已被占用，已自动改用 %d', desiredPort, finalPort);
+    log.warn('port %d is in use, using %d instead', desiredPort, finalPort);
   }
 
   await new Promise<void>((resolve) => {
     serve({ fetch: app.fetch, port: finalPort }, (info) => {
-      log.info(`WebUI 服务监听 http://localhost:${info.port}`);
+      log.info(`listening http://localhost:${info.port}`);
       resolve();
     });
   });

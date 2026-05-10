@@ -76,9 +76,7 @@ export class HookManager {
 
   async listProcesses(): Promise<HookProcessInfo[]> {
     const processes = listHookProcesses();
-    const seen = new Set<number>();
     for (const proc of processes) {
-      seen.add(proc.pid);
       const state = this.ensureState(proc.pid);
       state.name = proc.name || state.name;
       state.path = proc.path || state.path;
@@ -86,11 +84,6 @@ export class HookManager {
     const result: HookProcessInfo[] = [];
     for (const proc of processes) {
       result.push(this.toPublicInfo(this.ensureState(proc.pid)));
-    }
-    for (const state of this.states.values()) {
-      if (!seen.has(state.pid) && (state.injected || state.client)) {
-        result.push(this.toPublicInfo(state));
-      }
     }
     return result.sort((a, b) => a.pid - b.pid);
   }
@@ -165,13 +158,12 @@ export class HookManager {
         const livePipes = await QqHookClient.listLivePipes();
         if (livePipes.has(pid)) {
           state.injected = true;
-          state.method = 'reconnect';
+          state.method = state.method || 'reconnect';
           log.info('PID=%d already has SnowLuma pipe; will reconnect via watcher', pid);
         } else {
           state.injectResult = injectHookProcess(pid);
           state.injected = true;
           state.method = state.injectResult.method;
-          log.info('SnowLuma loaded into PID=%d via %s', pid, state.method);
         }
       }
       state.status = state.connected
@@ -317,6 +309,7 @@ export class HookManager {
     try {
       const livePipes = await QqHookClient.listLivePipes();
       const processes = listHookProcesses();
+      const runningSet = new Set(processes.map(p => p.pid));
 
       // Refresh metadata + ensure a state entry exists for each known PID.
       for (const proc of processes) {
@@ -326,6 +319,7 @@ export class HookManager {
       }
       // Auto-detect hooks that survived a SnowLuma restart or failed unload.
       for (const pid of livePipes) {
+        if (!runningSet.has(pid)) continue;
         const state = this.ensureState(pid);
         if (!state.injected) {
           state.injected = true;
@@ -335,14 +329,15 @@ export class HookManager {
         }
       }
 
-      const runningSet = new Set(processes.map(p => p.pid));
       const tasks: Promise<unknown>[] = [];
       for (const state of [...this.states.values()]) {
         const alivePipe = livePipes.has(state.pid);
         const aliveProc = runningSet.has(state.pid);
 
-        // Reap stale state entries that have nothing left to do.
-        if (!aliveProc && !alivePipe && !state.injected && !state.client) {
+        if (!aliveProc) {
+          const wasLoggedIn = state.loggedIn;
+          this.tearDownClient(state);
+          if (wasLoggedIn) this.bridgeManager.onPidDisconnected(state.pid);
           this.states.delete(state.pid);
           continue;
         }

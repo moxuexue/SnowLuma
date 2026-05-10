@@ -26,6 +26,7 @@ import {
   fetchGroupRequests as fetchGroupRequests_,
   fetchDownloadRKeys as fetchDownloadRKeys_,
 } from './bridge-contacts';
+import type { WebHonorType } from './web/group-honor';
 import {
   muteGroupMember as muteGroupMember_,
   muteGroupAll as muteGroupAll_,
@@ -60,13 +61,27 @@ import {
   setGroupReaction as setGroupReaction_,
   recallGroupMessage as recallGroupMessage_,
   recallPrivateMessage as recallPrivateMessage_,
+  markPrivateMessageRead as markGroupMsgAsRead_,
+  markGroupMessageRead as markPrivateMsgAsRead_,
   setFriendRemark as setFriendRemark_,
   fetchGroupFileCount as fetchGroupFileCount_,
+  setOnlineStatus as setOnlineStatus_,
+  setProfile as setProfile_,
 } from './bridge-actions';
+import {
+  getGroupHonorInfo as getGroupHonorInfo_,
+  forceFetchClientKey as forceFetchClientKey_,
+  getGroupEssence as getGroupEssence_,
+  getGroupEssenceAll as getGroupEssenceAll_,
+  sendGroupNotice as sendGroupNotice_,
+  getGroupNotice as getGroupNotice_,
+  getCookiesStr as getCookiesStr_,
+  getCsrfToken as getCsrfToken_,
+  getCredentials as getCredentials_,
+} from './web-actions';
 import type { GroupFilesResult } from './bridge-actions';
 import type { MediaIndexNode } from './bridge-actions';
-
-export type BridgeEventCallback = (event: QQEventVariant) => void;
+import { BridgeEventBus } from './event-bus';
 
 type CmdParser = (pkt: PacketInfo, qqInfo: QQInfo) => QQEventVariant[];
 
@@ -86,6 +101,12 @@ export interface DownloadRKeyInfo {
   type: number;
 }
 
+export interface ClientKeyInfo {
+  clientKey: string;
+  expireTime: string;
+  keyIndex: string
+}
+
 const log = createLogger('Bridge');
 const eventLog = createLogger('Event');
 
@@ -94,7 +115,12 @@ export class Bridge {
 
   private qqInfo_: QQInfo;
   private pids_ = new Set<number>();
-  private eventCallback_: BridgeEventCallback | null = null;
+  /**
+   * Per-kind event subscription. Replaces the legacy single-callback
+   * firehose: downstream consumers now register exactly the kinds they
+   * care about and `emitEvent` fans out in parallel.
+   */
+  readonly events = new BridgeEventBus();
   private cmdHandlers_ = new Map<string, CmdParser[]>();
   private packetClient_: PacketSender | null = null;
   private memberRefreshTasks_ = new Map<number, Promise<void>>();
@@ -131,10 +157,6 @@ export class Bridge {
     const arr = this.cmdHandlers_.get(cmd) ?? [];
     arr.push(parser);
     this.cmdHandlers_.set(cmd, arr);
-  }
-
-  setEventCallback(cb: BridgeEventCallback): void {
-    this.eventCallback_ = cb;
   }
 
   handlesCmd(cmd: string): boolean {
@@ -177,20 +199,20 @@ export class Bridge {
   }
 
   private emitEvent(event: QQEventVariant): void {
-    if (this.eventCallback_) {
-      try { this.eventCallback_(event); } catch (e) {
-        log.error('event callback error: %s', e instanceof Error ? (e.stack ?? e.message) : String(e));
-      }
-    }
+    // Fire-and-forget: errors inside subscribers are surfaced via the bus's
+    // own onError hook so one bad listener never blocks the others.
+    void this.events.emit(event);
   }
 
   private triggerMemberCacheRefresh(event: QQEventVariant): void {
     let groupId = 0;
     let reason = '';
+    let refreshGroupList = false;
     switch (event.kind) {
       case 'group_member_join':
         groupId = event.groupId;
         reason = 'group_member_join';
+        refreshGroupList = event.userUin === Number(this.qqInfo_.uin);
         break;
       case 'group_member_leave':
         groupId = event.groupId;
@@ -209,10 +231,12 @@ export class Bridge {
 
     const task = (async () => {
       try {
-        if (!this.qqInfo_.findGroup(groupId)) {
+        if (refreshGroupList) {
           try { await this.fetchGroupList(); } catch { /* ignore */ }
         }
-        await this.fetchGroupMemberList(groupId);
+        if (this.qqInfo_.findGroup(groupId)) {
+          await this.fetchGroupMemberList(groupId);
+        }
         log.debug('member cache refreshed: group=%d reason=%s', groupId, reason);
       } catch (e) {
         log.warn('failed to refresh member cache: group=%d reason=%s err=%s',
@@ -445,8 +469,42 @@ export class Bridge {
   async setGroupReaction(groupId: number, sequence: number, code: string, isSet: boolean): Promise<void> { return setGroupReaction_(this, groupId, sequence, code, isSet); }
   async recallGroupMessage(groupId: number, sequence: number): Promise<void> { return recallGroupMessage_(this, groupId, sequence); }
   async recallPrivateMessage(userUin: number, clientSeq: number, msgSeq: number, random: number, timestamp: number): Promise<void> { return recallPrivateMessage_(this, userUin, clientSeq, msgSeq, random, timestamp); }
+  async markGroupMsgAsRead(groupId: number, sequence: number): Promise<void> { return markGroupMsgAsRead_(this, groupId, sequence); }
+  async markPrivateMsgAsRead(userId: number, sequence: number): Promise<void> { return markPrivateMsgAsRead_(this, userId, sequence); }
   async setFriendRemark(userId: number, remark: string): Promise<void> { return setFriendRemark_(this, userId, remark); }
+  async getGroupHonorInfo(groupId: number, type: WebHonorType | string): Promise<any> {
+    return getGroupHonorInfo_(this, groupId, type);
+  }
+  async forceFetchClientKey(): Promise<ClientKeyInfo> { return forceFetchClientKey_(this)}
+  async getGroupEssence(groupId: number, pageStart: number = 0, pageLimit: number = 50): Promise<any> {
+    return getGroupEssence_(this, groupId, pageStart, pageLimit);
+  }
+
+  async getGroupEssenceAll(groupId: number): Promise<any> {
+    return getGroupEssenceAll_(this, groupId);
+  }
+
+  async sendGroupNotice(groupId: number, content: string, options?: any) {
+    return sendGroupNotice_(this, groupId, content, options);
+  }
+
+  async getGroupNotice(groupId: number) {
+    return getGroupNotice_(this, groupId);
+  }
+
   async fetchGroupFileCount(groupId: number): Promise<{ fileCount: number; maxCount: number }> { return fetchGroupFileCount_(this, groupId); }
+
+  // extend
+  async setOnlineStatus(status: number, extStatus: number = 0, batteryStatus: number = 100): Promise<void> {
+    return setOnlineStatus_(this, status, extStatus, batteryStatus);
+  }
+  async setProfile(nickname?: string, personalNote?: string): Promise<void> {
+    return setProfile_(this, nickname, personalNote);
+  }
+  async getCookiesStr(domain: string): Promise<string> { return getCookiesStr_(this, domain); }
+  async getCsrfToken(): Promise<number> { return getCsrfToken_(this); }
+  async getCredentials(domain: string) { return getCredentials_(this, domain); }
+
 }
 
 // --- Module-level helper functions ---

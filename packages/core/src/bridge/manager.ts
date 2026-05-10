@@ -4,7 +4,6 @@
 
 import type { NtqqHandler } from '../protocol/ntqq-handler';
 import type { PacketInfo } from '../protocol/types';
-import type { QQEventVariant } from './events';
 import { Bridge } from './bridge';
 import { QQInfo } from './qq-info';
 import type { PacketSender } from '../protocol/packet-sender';
@@ -12,7 +11,6 @@ import { createLogger } from '../utils/logger';
 
 export type SessionStartedCallback = (uin: string, qqInfo: QQInfo, bridge: Bridge) => void;
 export type SessionClosedCallback = (uin: string) => void;
-export type BridgeEventCallback = (uin: string, event: QQEventVariant) => void;
 
 interface QQSession {
   qqInfo: QQInfo;
@@ -28,11 +26,9 @@ export class BridgeManager {
 
   private onSessionStarted_: SessionStartedCallback | null = null;
   private onSessionClosed_: SessionClosedCallback | null = null;
-  private onBridgeEvent_: BridgeEventCallback | null = null;
 
   setSessionStartedCallback(cb: SessionStartedCallback): void { this.onSessionStarted_ = cb; }
   setSessionClosedCallback(cb: SessionClosedCallback): void { this.onSessionClosed_ = cb; }
-  setEventCallback(cb: BridgeEventCallback): void { this.onBridgeEvent_ = cb; }
 
   bind(ntqq: NtqqHandler): void {
     ntqq.registerCmdAll((pkt: PacketInfo) => this.onPacket(pkt));
@@ -115,11 +111,9 @@ export class BridgeManager {
     session = { qqInfo, bridge };
     this.sessions_.set(uin, session);
 
-    // Wire event callback
-    bridge.setEventCallback((event) => {
-      if (this.onBridgeEvent_) this.onBridgeEvent_(uin, event);
-    });
-
+    // Each downstream consumer (e.g. OneBotInstance) subscribes to
+    // `bridge.events` directly via the per-kind bus — there is no longer a
+    // generic firehose to wire here.
     return { session, created: true };
   }
 

@@ -1,0 +1,279 @@
+import type { JsonObject, JsonValue } from './json';
+
+export interface SendMsgParams extends JsonObject {
+  message_type?: 'private' | 'group' | string;
+  user_id?: number;
+  group_id?: number;
+  message: JsonValue;
+  auto_escape?: boolean;
+}
+
+export interface SendPrivateMsgParams extends JsonObject {
+  user_id: number;
+  message: JsonValue;
+  auto_escape?: boolean;
+}
+
+export interface SendGroupMsgParams extends JsonObject {
+  group_id: number;
+  message: JsonValue;
+  auto_escape?: boolean;
+}
+
+export interface MessageIdParams extends JsonObject {
+  message_id: number;
+}
+
+export interface GroupIdParams extends JsonObject {
+  group_id: number;
+}
+
+export interface UserIdParams extends JsonObject {
+  user_id: number;
+}
+
+export interface NoCacheParams extends JsonObject {
+  no_cache?: boolean;
+}
+
+export interface GetGroupListParams extends NoCacheParams {}
+
+export interface GetGroupInfoParams extends GroupIdParams {
+  no_cache?: boolean;
+}
+
+export interface GetGroupMemberListParams extends GroupIdParams {
+  no_cache?: boolean;
+}
+
+export interface GetGroupMemberInfoParams extends GroupIdParams {
+  user_id: number;
+  no_cache?: boolean;
+}
+
+export interface GetGroupHonorInfoParams extends GroupIdParams {
+  type?: 'talkative' | 'performer' | 'legend' | 'strong_newbie' | 'emotion' | 'all' | string;
+}
+
+export interface DeleteFriendParams extends UserIdParams {
+  block?: boolean;
+}
+
+export interface SetGroupKickParams extends GroupIdParams {
+  user_id: number;
+  reject_add_request?: boolean;
+}
+
+export interface SetGroupBanParams extends GroupIdParams {
+  user_id: number;
+  duration?: number;
+}
+
+export interface SetGroupWholeBanParams extends GroupIdParams {
+  enable?: boolean;
+}
+
+export interface SetGroupAdminParams extends GroupIdParams {
+  user_id: number;
+  enable?: boolean;
+}
+
+export interface SetGroupCardParams extends GroupIdParams {
+  user_id: number;
+  card?: string;
+}
+
+export interface SetGroupNameParams extends GroupIdParams {
+  group_name: string;
+}
+
+export interface SetGroupSpecialTitleParams extends GroupIdParams {
+  user_id: number;
+  special_title?: string;
+}
+
+export interface UploadGroupFileParams extends GroupIdParams {
+  file: string;
+  name?: string;
+  folder?: string;
+  folder_id?: string;
+  upload_file?: boolean;
+}
+
+export interface UploadPrivateFileParams extends UserIdParams {
+  file: string;
+  name?: string;
+  upload_file?: boolean;
+}
+
+export interface GetGroupFileUrlParams extends GroupIdParams {
+  file_id: string;
+  busid?: number;
+}
+
+export interface GetGroupFilesParams extends GroupIdParams {
+  folder_id?: string;
+  folder?: string;
+}
+
+export interface DeleteGroupFileParams extends GroupIdParams {
+  file_id: string;
+}
+
+export interface MoveGroupFileParams extends GroupIdParams {
+  file_id: string;
+  parent_directory: string;
+  target_directory: string;
+}
+
+export interface CreateGroupFileFolderParams extends GroupIdParams {
+  name: string;
+  parent_id?: string;
+}
+
+export interface DeleteGroupFileFolderParams extends GroupIdParams {
+  folder_id: string;
+}
+
+export interface RenameGroupFileFolderParams extends GroupIdParams {
+  folder_id: string;
+  new_folder_name?: string;
+  name?: string;
+}
+
+export interface GetPrivateFileUrlParams extends UserIdParams {
+  file_id: string;
+  file_hash: string;
+}
+
+export interface SetFriendAddRequestParams extends JsonObject {
+  flag: string;
+  approve?: boolean;
+}
+
+export interface SetGroupAddRequestParams extends JsonObject {
+  flag: string;
+  sub_type?: string;
+  type?: string;
+  approve?: boolean;
+  reason?: string;
+}
+
+export interface SendLikeParams extends UserIdParams {
+  times?: number;
+}
+
+export interface FriendPokeParams extends UserIdParams {
+  target_id?: number;
+}
+
+export interface GroupPokeParams extends GroupIdParams {
+  user_id: number;
+}
+
+export interface SendPokeParams extends UserIdParams {
+  group_id?: number;
+}
+
+export interface SetGroupReactionParams extends JsonObject {
+  message_id: number;
+  code: string;
+  group_id?: number;
+  is_set?: boolean;
+}
+
+export interface GetMessageHistoryParams extends JsonObject {
+  message_id?: number;
+  count?: number;
+}
+
+export interface GetGroupMessageHistoryParams extends GroupIdParams, GetMessageHistoryParams {}
+export interface GetFriendMessageHistoryParams extends UserIdParams, GetMessageHistoryParams {}
+
+export interface MarkGroupMsgAsReadParams extends JsonObject {
+  message_id: number;
+  group_id?: number;
+}
+
+export interface MarkPrivateMsgAsReadParams extends JsonObject {
+  message_id: number;
+  user_id?: number;
+}
+
+export interface MarkMsgAsReadParams extends JsonObject {
+  message_id: number;
+  target_id?: number;
+}
+
+export interface GroupNoticeParams extends GroupIdParams {
+  content: string;
+  image?: string;
+  pinned?: number;
+  type?: number;
+  confirm_required?: number;
+}
+
+export interface ForwardMessageParams extends JsonObject {
+  message_type?: 'private' | 'group' | string;
+  user_id?: number;
+  group_id?: number;
+  message?: JsonValue;
+  messages?: JsonValue;
+}
+
+export interface GroupForwardMessageParams extends GroupIdParams {
+  message?: JsonValue;
+  messages?: JsonValue;
+}
+
+export interface PrivateForwardMessageParams extends UserIdParams {
+  message?: JsonValue;
+  messages?: JsonValue;
+}
+
+export interface GetForwardMsgParams extends JsonObject {
+  id?: string;
+  message_id?: number | string;
+}
+
+export interface GetMediaParams extends JsonObject {
+  file?: string;
+  file_id?: string;
+}
+
+export interface DomainParams extends JsonObject {
+  domain?: string;
+}
+
+export interface QuickOperationParams extends JsonObject {
+  context: JsonObject;
+  operation: JsonObject;
+}
+
+export interface SetFriendRemarkParams extends UserIdParams {
+  remark: string;
+}
+
+export interface SetMsgEmojiLikeParams extends JsonObject {
+  message_id: number;
+  emoji_id: string;
+  set?: boolean;
+}
+
+export interface DownloadFileParams extends JsonObject {
+  url?: string;
+  base64?: string;
+  name?: string;
+  headers?: string | string[];
+}
+
+export interface SetQqProfileParams extends JsonObject {
+  nickname?: string;
+  personal_note?: string;
+}
+
+export interface SetOnlineStatusParams extends JsonObject {
+  status: number;
+  ext_status?: number;
+  battery_status?: number;
+}

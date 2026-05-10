@@ -1,18 +1,23 @@
 import path from 'path';
-import type { QQEventVariant } from '../bridge/events';
 import type { Bridge } from '../bridge/bridge';
 import type { QQInfo } from '../bridge/qq-info';
 import { ApiHandler } from './api-handler';
 import { EventConverter } from './event-converter';
 import { MessageStore } from './message-store';
+import { MediaStore } from './media-store';
 import { RKeyCache } from './instance-rkey';
-import { buildApiContext } from './instance-context';
+import { buildApiContext, type OneBotInstanceContext } from './instance-context';
+import { registerEventPipeline } from './event-pipeline';
 import { GROUP_MESSAGE_EVENT, PRIVATE_MESSAGE_EVENT, hashMessageIdInt32 } from './message-id';
-import type { JsonObject, MessageMeta, OneBotConfig } from './types';
-import { HttpTransport } from './http-transport';
-import { HttpPostTransport } from './http-post-transport';
-import { WsTransport } from './ws-transport';
-import { buildDispatchPayload } from './event-filter';
+import type { JsonObject, MessageMeta, OneBotConfig, NetworkBase } from './types';
+import {
+  OneBotNetworkManager,
+  WsServerAdapter,
+  WsClientAdapter,
+  HttpServerAdapter,
+  HttpPostAdapter,
+  type NetworkAdapterContext,
+} from './network';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Event');
@@ -25,10 +30,11 @@ export class OneBotInstance {
   private readonly apiHandler: ApiHandler;
   private readonly eventConverter: EventConverter;
   private readonly messageStore: MessageStore;
-  private readonly httpTransport: HttpTransport;
-  private readonly httpPostTransport: HttpPostTransport;
-  private readonly wsTransport: WsTransport;
+  private readonly mediaStore: MediaStore;
+  private readonly networkManager: OneBotNetworkManager;
   private readonly rkeyCache: RKeyCache;
+  private readonly ctx: OneBotInstanceContext;
+  private disposeEventPipeline: (() => void) | null = null;
 
   private readonly pids = new Set<number>();
   private online = true;
@@ -42,6 +48,7 @@ export class OneBotInstance {
 
     this.eventConverter = new EventConverter();
     this.rkeyCache = new RKeyCache();
+    this.mediaStore = new MediaStore(path.join('data', this.uin, 'media.db'));
     this.eventConverter.setImageUrlResolver((element, isGroup) =>
       this.rkeyCache.resolveImageUrl(this.bridge, element, isGroup));
     this.eventConverter.setMediaUrlResolver(async (element, isGroup, sessionId) => {
@@ -70,69 +77,83 @@ export class OneBotInstance {
       // Then apply RKey if needed
       return this.rkeyCache.resolveMediaUrl(this.bridge, element, isGroup);
     });
+    this.eventConverter.setMediaSegmentSink((mediaType, element, data, isGroup, sessionId) => {
+      const url = typeof data.url === 'string' ? data.url : '';
+      const file = typeof data.file === 'string' ? data.file : '';
+      if (mediaType === 'image') {
+        this.mediaStore.rememberImage({
+          file: file || element.fileId || '',
+          url,
+          fileSize: element.fileSize ?? 0,
+          fileName: element.fileId ?? '',
+          subType: element.subType ?? 0,
+          summary: element.summary ?? '',
+          imageUrl: element.imageUrl ?? '',
+          isGroup,
+          sessionId,
+        });
+        return;
+      }
+      this.mediaStore.rememberRecord({
+        file: file || element.fileName || element.fileId || '',
+        fileId: element.fileId ?? '',
+        url,
+        fileSize: element.fileSize ?? 0,
+        fileName: element.fileName ?? '',
+        duration: element.duration ?? 0,
+        fileHash: element.fileHash ?? '',
+        mediaNode: element.mediaNode,
+        isGroup,
+        sessionId,
+      });
+    });
     this.eventConverter.setMessageIdResolver((isGroup, sessionId, sequence, eventName) =>
       hashMessageIdInt32(sequence, sessionId, eventName || (isGroup ? GROUP_MESSAGE_EVENT : PRIVATE_MESSAGE_EVENT)));
     this.messageStore = new MessageStore(path.join('data', this.uin, 'messages.json'));
 
-    const context = buildApiContext({
+    // Shared instance context. Only carries fields that are actually read
+    // through it — api handler and network manager stay as direct fields on
+    // the instance because nothing reads them via ctx.
+    const ctx: OneBotInstanceContext = {
       uin: this.uin,
+      selfId: parseInt(this.uin, 10) || 0,
       qqInfo: this.qqInfo,
       bridge: this.bridge,
       messageStore: this.messageStore,
+      mediaStore: this.mediaStore,
+      eventConverter: this.eventConverter,
+      config,
       musicSignUrl: config.musicSignUrl,
       cacheMessageMeta: (messageId, meta) => this.cacheMessageMeta(messageId, meta),
-    });
-    this.apiHandler = new ApiHandler(context);
+      dispatchEvent: (event) => this.dispatchEvent(event),
+    };
+    this.ctx = ctx;
 
-    this.httpTransport = new HttpTransport(config, {
-      api: this.apiHandler,
-    });
+    this.apiHandler = new ApiHandler(buildApiContext(ctx));
+    this.networkManager = new OneBotNetworkManager();
+    this.installAdaptersFromConfig(config);
+    void this.networkManager.openAll();
 
-    this.httpPostTransport = new HttpPostTransport(config, {
-      uin: this.uin,
-      api: this.apiHandler,
-    });
-
-    this.wsTransport = new WsTransport(config, {
-      uin: this.uin,
-      api: this.apiHandler,
-      buildLifecycleEvent: (subType) => this.makeLifecycleEvent(subType),
-      buildHeartbeatEvent: () => this.makeHeartbeatEvent(),
-    });
-
-    this.httpTransport.start();
-    this.httpPostTransport.start();
-    this.wsTransport.start();
     this.startHeartbeat();
     this.rkeyCache.warmUp(this.bridge, this.uin);
+
+    // Per-kind subscription on the typed event bus. Each bridge event kind
+    // gets its own focused handler in `event-pipeline`; the firehose is gone.
+    this.disposeEventPipeline = registerEventPipeline(ctx);
   }
 
   reloadConfig(config: OneBotConfig): void {
-    this.httpTransport.reloadConfig(config);
-    this.httpPostTransport.reloadConfig(config);
-    this.wsTransport.reloadConfig(config);
+    void this.applyConfigDiff(config);
   }
 
   dispose(): void {
     this.online = false;
     this.stopHeartbeat();
-    this.httpTransport.stop();
-    this.httpPostTransport.stop();
-    this.wsTransport.stop();
+    this.disposeEventPipeline?.();
+    this.disposeEventPipeline = null;
+    void this.networkManager.closeAll();
     this.messageStore.close();
-  }
-
-  onBridgeEvent(event: QQEventVariant): void {
-    this.cacheMessageMetaFromBridgeEvent(event);
-
-    void this.dispatchBridgeEventAsync(event);
-  }
-
-  private async dispatchBridgeEventAsync(event: QQEventVariant): Promise<void> {
-    const converted = await this.eventConverter.convert(this.uin, event);
-    if (!converted) return;
-
-    this.dispatchEvent(converted);
+    this.mediaStore.close();
   }
 
   addPid(pid: number): void {
@@ -158,11 +179,87 @@ export class OneBotInstance {
   private dispatchEvent(event: JsonObject): void {
     this.cacheMessageEvent(event);
     this.logReceivedMessage(event);
-    // Produce one canonical event, serialize the two format variants once,
-    // then let each adapter pick its slot at zero allocation cost.
-    const payload = buildDispatchPayload(event);
-    this.wsTransport.publishEvent(event, payload);
-    this.httpPostTransport.publishEvent(event, payload);
+    // NetworkManager builds the dispatch payload once and fans out to every
+    // active adapter in parallel via Promise.allSettled.
+    void this.networkManager.emitEvent(event);
+  }
+
+  private buildNetworkContext(): NetworkAdapterContext {
+    return {
+      uin: this.uin,
+      api: this.apiHandler,
+      buildLifecycleEvent: (subType) => this.makeLifecycleEvent(subType),
+      buildHeartbeatEvent: () => this.makeHeartbeatEvent(),
+    };
+  }
+
+  private installAdaptersFromConfig(config: OneBotConfig): void {
+    const ctx = this.buildNetworkContext();
+    for (const net of config.networks.httpServers) {
+      if (net.enabled === false) continue;
+      this.networkManager.register(new HttpServerAdapter(net.name, net, ctx));
+    }
+    for (const net of config.networks.httpClients) {
+      if (net.enabled === false || !net.url) continue;
+      this.networkManager.register(new HttpPostAdapter(net.name, net, ctx));
+    }
+    for (const net of config.networks.wsServers) {
+      if (net.enabled === false) continue;
+      this.networkManager.register(new WsServerAdapter(net.name, net, ctx));
+    }
+    for (const net of config.networks.wsClients) {
+      if (net.enabled === false || !net.url) continue;
+      this.networkManager.register(new WsClientAdapter(net.name, net, ctx));
+    }
+  }
+
+  private async applyConfigDiff(next: OneBotConfig): Promise<void> {
+    const ctx = this.buildNetworkContext();
+    const desired = new Map<string, NetworkBase>();
+    const factories = new Map<string, () => void>();
+
+    for (const net of next.networks.httpServers) {
+      desired.set(net.name, net);
+      factories.set(net.name, () => this.networkManager.register(new HttpServerAdapter(net.name, net, ctx)));
+    }
+    for (const net of next.networks.httpClients) {
+      desired.set(net.name, net);
+      factories.set(net.name, () => this.networkManager.register(new HttpPostAdapter(net.name, net, ctx)));
+    }
+    for (const net of next.networks.wsServers) {
+      desired.set(net.name, net);
+      factories.set(net.name, () => this.networkManager.register(new WsServerAdapter(net.name, net, ctx)));
+    }
+    for (const net of next.networks.wsClients) {
+      desired.set(net.name, net);
+      factories.set(net.name, () => this.networkManager.register(new WsClientAdapter(net.name, net, ctx)));
+    }
+
+    // Close adapters whose entry has been removed entirely.
+    for (const adapter of this.networkManager.list()) {
+      if (!desired.has(adapter.name)) {
+        await this.networkManager.closeOne(adapter.name);
+      }
+    }
+
+    // Reload existing adapters in place; spin up new ones the manager hasn't
+    // seen before.
+    for (const [name, net] of desired) {
+      const existing = this.networkManager.get(name);
+      if (existing) {
+        try {
+          await existing.reload(net as never);
+        } catch (err) {
+          log.warn('reload [%s] failed: %s', name, err instanceof Error ? err.message : String(err));
+        }
+      } else if (net.enabled !== false) {
+        const factory = factories.get(name);
+        if (factory) {
+          factory();
+          await this.networkManager.get(name)?.open();
+        }
+      }
+    }
   }
 
   private logReceivedMessage(event: JsonObject): void {
@@ -237,49 +334,6 @@ export class OneBotInstance {
 
     if (sessionId === 0) return;
     this.messageStore.storeEvent(messageId, isGroup, sessionId, sequence, eventName, event);
-  }
-
-  private cacheMessageMetaFromBridgeEvent(event: QQEventVariant): void {
-    if (event.kind === 'group_message') {
-      const messageId = hashMessageIdInt32(event.msgSeq, event.groupId, GROUP_MESSAGE_EVENT);
-      this.cacheMessageMeta(messageId, {
-        isGroup: true,
-        targetId: event.groupId,
-        sequence: event.msgSeq,
-        eventName: GROUP_MESSAGE_EVENT,
-        clientSequence: 0,
-        random: event.msgId,
-        timestamp: event.time,
-      });
-      return;
-    }
-
-    if (event.kind === 'friend_message') {
-      const messageId = hashMessageIdInt32(event.msgSeq, event.senderUin, PRIVATE_MESSAGE_EVENT);
-      this.cacheMessageMeta(messageId, {
-        isGroup: false,
-        targetId: event.senderUin,
-        sequence: event.msgSeq,
-        eventName: PRIVATE_MESSAGE_EVENT,
-        clientSequence: 0,
-        random: event.msgId,
-        timestamp: event.time,
-      });
-      return;
-    }
-
-    if (event.kind === 'temp_message') {
-      const messageId = hashMessageIdInt32(event.msgSeq, event.senderUin, PRIVATE_MESSAGE_EVENT);
-      this.cacheMessageMeta(messageId, {
-        isGroup: false,
-        targetId: event.senderUin,
-        sequence: event.msgSeq,
-        eventName: PRIVATE_MESSAGE_EVENT,
-        clientSequence: 0,
-        random: 0,
-        timestamp: event.time,
-      });
-    }
   }
 
   private cacheMessageMeta(messageId: number, meta: MessageMeta): void {

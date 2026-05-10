@@ -2,26 +2,56 @@ import type { Bridge } from '../bridge/bridge';
 import type { ForwardNodePayload, MessageElement } from '../bridge/events';
 import type { QQInfo } from '../bridge/qq-info';
 import type { ApiActionContext, MessageSendResult } from './api-handler';
+import type { EventConverter } from './event-converter';
 import { elementsToOneBotSegments } from './event-converter';
 import { MessageStore } from './message-store';
 import { parseMessage } from './message-parser';
 import { GROUP_MESSAGE_EVENT, PRIVATE_MESSAGE_EVENT, hashMessageIdInt32 } from './message-id';
-import type { JsonObject, JsonValue, MessageMeta } from './types';
+import type { MediaStore } from './media-store';
+import type { JsonObject, JsonValue, MessageMeta, OneBotConfig } from './types';
 import { createLogger } from '../utils/logger';
+import {WebHonorType} from "@/bridge/web/group-honor";
 
 const log = createLogger('OneBot');
 
-export interface InstanceRef {
+/**
+ * Single shared context bag that flows through every OneBot instance-internal
+ * subsystem: API builder and the per-kind event pipeline.
+ *
+ * Only fields that are actually read through this bag live here — the api
+ * handler and network manager are owned by `OneBotInstance` directly because
+ * nothing reads them via ctx, and including them here would force a
+ * chicken-and-egg `late-bound` field dance during construction.
+ *
+ * `dispatchEvent` is the indirection used by the event pipeline to hand a
+ * converted OneBot event back to the instance for caching + adapter fan-out;
+ * it lets the pipeline stay decoupled from the network manager.
+ */
+export interface OneBotInstanceContext {
+  /** Self UIN as string (matches what's on disk and on the wire). */
   uin: string;
+  /** Self UIN parsed once, used in event payloads. */
+  selfId: number;
+
   qqInfo: QQInfo;
   bridge: Bridge;
+
   messageStore: MessageStore;
+  mediaStore: MediaStore;
+
+  eventConverter: EventConverter;
+
+  config: OneBotConfig;
   musicSignUrl?: string;
+
+  /** Persist meta about a message id; safe to call any number of times. */
   cacheMessageMeta(messageId: number, meta: MessageMeta): void;
+  /** Hand a fully-converted OneBot event to the network manager + caches. */
+  dispatchEvent(event: JsonObject): void;
 }
 
-export function buildApiContext(ref: InstanceRef): ApiActionContext {
-  const { bridge, qqInfo, messageStore } = ref;
+export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
+  const { bridge, qqInfo, messageStore, mediaStore } = ref;
 
   return {
     getLoginInfo: () => getLoginInfo(ref),
@@ -29,7 +59,7 @@ export function buildApiContext(ref: InstanceRef): ApiActionContext {
     getMessage: (messageId) => messageStore.findEvent(messageId),
     getMessageMeta: (messageId) => messageStore.findMeta(messageId),
     canSendImage: () => true,
-    canSendRecord: () => false,
+    canSendRecord: () => true,
     sendPrivateMessage: (userId, message, autoEscape) => handleSendPrivate(ref, userId, message, autoEscape),
     sendGroupMessage: (groupId, message, autoEscape) => handleSendGroup(ref, groupId, message, autoEscape),
     deleteMessage: (messageId, meta) => handleDeleteMessage(bridge, meta),
@@ -111,6 +141,8 @@ export function buildApiContext(ref: InstanceRef): ApiActionContext {
     getForwardMsg: async (resId) => {
       return handleGetForward(ref, resId);
     },
+    forceFetchClientKey: async () => bridge.forceFetchClientKey(),
+
     // Extended NapCat-compatible
     setFriendRemark: (userId, remark) => bridge.setFriendRemark(userId, remark),
     getGroupFileCount: (groupId) => bridge.fetchGroupFileCount(groupId),
@@ -119,12 +151,77 @@ export function buildApiContext(ref: InstanceRef): ApiActionContext {
       if (!meta || !meta.isGroup) throw new Error('message not found or not a group message');
       await bridge.setGroupReaction(meta.targetId, meta.sequence, emojiId, set);
     },
+    markGroupMsgAsRead: (groupId: number, sequence: number) => bridge.markGroupMsgAsRead(groupId, sequence),
+    markPrivateMsgAsRead: (userId: number, sequence: number) => bridge.markPrivateMsgAsRead(userId, sequence),
+    setOnlineStatus: (status: number, extStatus?: number, batteryStatus?: number) => bridge.setOnlineStatus(status, extStatus, batteryStatus),
+    setProfile: (nickname?: string, personalNote?: string) => bridge.setProfile(nickname, personalNote),
+    // web
+    getGroupHonorInfo: (groupId: number, type: WebHonorType | string)=> bridge.getGroupHonorInfo(groupId, type),
+    getGroupEssence: (groupId: number, pageStart: number = 0, pageLimit: number = 50) => bridge.getGroupEssence(groupId, pageStart, pageLimit),
+    getGroupEssenceAll: (groupId: number) => bridge.getGroupEssenceAll(groupId),
+    sendGroupNotice: (groupId: number, content: string, options?: any) => bridge.sendGroupNotice(groupId, content, options),
+    getGroupNotice: (groupId: number) => bridge.getGroupNotice(groupId),
+    getCookiesStr: (domain: string) => bridge.getCookiesStr(domain),
+    getCsrfToken: () => bridge.getCsrfToken(),
+    getCredentials: (domain: string) => bridge.getCredentials(domain),
+    // Media lookup
+    getImageInfo: (file) => handleGetImageInfo(mediaStore, file),
+    getRecordInfo: (file) => handleGetRecordInfo(bridge, mediaStore, file),
+  };
+}
+
+// --- Media lookup ---
+
+async function handleGetImageInfo(
+  mediaStore: MediaStore,
+  file: string,
+): Promise<JsonObject | null> {
+  const cached = mediaStore.findImage(file);
+  if (!cached) return null;
+  const url = cached.url || cached.imageUrl || '';
+  return {
+    file: url || cached.file,
+    url,
+    file_size: String(cached.fileSize ?? 0),
+    file_name: cached.fileName || cached.file,
+  };
+}
+
+async function handleGetRecordInfo(
+  bridge: Bridge,
+  mediaStore: MediaStore,
+  file: string,
+): Promise<JsonObject | null> {
+  const cached = mediaStore.findRecord(file);
+  if (!cached) return null;
+
+  // Re-resolve via OIDB if the cached URL is missing or empty.
+  // Mirrors NapCat's getPttUrl path: GetGroupPttUrl / GetPttUrl by fileUuid.
+  let url = cached.url;
+  if (!url && cached.mediaNode) {
+    try {
+      url = cached.isGroup
+        ? await bridge.fetchGroupPttUrlByNode(cached.sessionId, cached.mediaNode)
+        : await bridge.fetchPrivatePttUrlByNode(cached.mediaNode);
+      if (url) {
+        mediaStore.updateRecordUrl(file, url);
+      }
+    } catch (err) {
+      log.warn('get_record url refetch failed: %s', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return {
+    file: url || cached.file,
+    url: url || '',
+    file_size: String(cached.fileSize ?? 0),
+    file_name: cached.fileName || cached.file,
   };
 }
 
 // --- Login info ---
 
-function getLoginInfo(ref: InstanceRef): { userId: number; nickname: string } {
+function getLoginInfo(ref: OneBotInstanceContext): { userId: number; nickname: string } {
   const userId = parseInt(ref.uin, 10) || 0;
   const nickname = ref.qqInfo.nickname || ref.uin;
   return { userId, nickname };
@@ -480,7 +577,7 @@ function logSentMessage(isGroup: boolean, targetId: number, elements: MessageEle
 // --- Send message ---
 
 async function handleSendPrivate(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   userId: number,
   message: JsonValue,
   autoEscape: boolean,
@@ -526,7 +623,7 @@ async function handleSendPrivate(
 }
 
 async function handleSendGroup(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   groupId: number,
   message: JsonValue,
   autoEscape: boolean,
@@ -572,7 +669,7 @@ async function handleSendGroup(
 }
 
 async function handleSendGroupForward(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   groupId: number,
   messages: JsonValue,
 ): Promise<{ messageId: number; forwardId: string }> {
@@ -595,7 +692,7 @@ async function handleSendGroupForward(
 }
 
 async function handleSendPrivateForward(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   userId: number,
   messages: JsonValue,
 ): Promise<{ messageId: number; forwardId: string }> {
@@ -618,7 +715,7 @@ async function handleSendPrivateForward(
 }
 
 async function handleUploadForward(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   messages: JsonValue,
 ): Promise<{ forwardId: string }> {
   const nodes = await parseForwardNodes(ref, messages);
@@ -627,7 +724,7 @@ async function handleUploadForward(
 }
 
 async function handleGetForward(
-  ref: InstanceRef,
+  ref: OneBotInstanceContext,
   resId: string,
 ): Promise<JsonObject[]> {
   const nodes = await ref.bridge.fetchForwardNodes(resId);
@@ -647,7 +744,7 @@ async function handleGetForward(
   return results;
 }
 
-async function parseForwardNodes(ref: InstanceRef, messages: JsonValue): Promise<ForwardNodePayload[]> {
+async function parseForwardNodes(ref: OneBotInstanceContext, messages: JsonValue): Promise<ForwardNodePayload[]> {
   if (!Array.isArray(messages)) {
     throw new Error('forward messages must be an array');
   }

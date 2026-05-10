@@ -20,7 +20,7 @@ export interface HookProcessInfo {
 }
 
 export type MessageFormat = 'array' | 'string';
-export type WsRole = 'api' | 'event' | 'universal';
+export type WsRole = 'Api' | 'Event' | 'Universal';
 
 interface NetworkBase {
   name: string;

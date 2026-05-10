@@ -1,4 +1,3 @@
-import type { QQEventVariant } from '../bridge/events';
 import type { Bridge } from '../bridge/bridge';
 import type { QQInfo } from '../bridge/qq-info';
 import type { BridgeManager } from '../bridge/manager';
@@ -21,9 +20,8 @@ export class OneBotManager {
       this.onSessionClosed(uin);
     });
 
-    bridgeManager.setEventCallback((uin, event) => {
-      this.onBridgeEvent(uin, event);
-    });
+    // Per-kind subscriptions to `bridge.events` happen inside
+    // `OneBotInstance` itself; no global firehose to wire here.
   }
 
   getInstance(uin: string): OneBotInstance | null {
@@ -80,12 +78,6 @@ export class OneBotManager {
     log.info('session closed: UIN=%s', uin);
   }
 
-  private onBridgeEvent(uin: string, event: QQEventVariant): void {
-    const instance = this.instances.get(uin);
-    if (!instance) return;
-
-    instance.onBridgeEvent(event);
-  }
 }
 
 async function warmUpBridgeState(uin: string, qqInfo: QQInfo, bridge: Bridge): Promise<void> {

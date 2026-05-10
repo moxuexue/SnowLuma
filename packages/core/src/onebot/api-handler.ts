@@ -10,10 +10,23 @@ import { register as registerGroupFile } from './actions/group-file';
 import { register as registerRequest } from './actions/request';
 import { register as registerExtended } from './actions/extended';
 
+import { WebHonorType } from '@/bridge/web/group-honor';
+// import {ClientKeyInfo} from "@/bridge/bridge";
+
 export interface MessageSendResult {
   messageId: number;
   meta?: MessageMeta;
   echoEvent?: JsonObject;
+}
+
+export interface GroupEssenceMsgRet {
+  retcode: number;
+  data: {
+    is_end: boolean;
+    msg_list: any[];
+    [key: string]: any;
+  };
+  [key: string]: any;
 }
 
 export interface ApiActionContext {
@@ -62,6 +75,9 @@ export interface ApiActionContext {
   sendGroupPoke?: (groupId: number, userId: number) => Promise<void>;
   setEssenceMsg?: (messageId: number) => Promise<void>;
   deleteEssenceMsg?: (messageId: number) => Promise<void>;
+  forceFetchClientKey? : () => Promise<{clientKey: string, keyIndex: string, expireTime: string}>;
+  setOnlineStatus?: (status: number, extStatus?: number, batteryStatus?: number) => Promise<void>;
+  setProfile?: (nickname?: string, personalNote?: string) => Promise<void>;
   // New context methods
   setGroupReaction?: (groupId: number, sequence: number, code: string, isSet: boolean) => Promise<void>;
   handleDeleteFriend?: (userId: number, block?: boolean) => Promise<void>;
@@ -78,6 +94,20 @@ export interface ApiActionContext {
   setFriendRemark?: (userId: number, remark: string) => Promise<void>;
   getGroupFileCount?: (groupId: number) => Promise<{ fileCount: number; maxCount: number }>;
   setMsgEmojiLike?: (messageId: number, emojiId: string, set: boolean) => Promise<void>;
+  markGroupMsgAsRead?: (groupId: number, sequence: number) => Promise<void>;
+  markPrivateMsgAsRead?: (userId: number, sequence: number) => Promise<void>;
+  // Web
+  getGroupHonorInfo?: (groupId: number, type: WebHonorType | string) => Promise<any>;
+  getGroupEssence?: (groupId: number, pageStart?: number, pageLimit?: number) => Promise<GroupEssenceMsgRet>;
+  getGroupEssenceAll?: (groupId: number) => Promise<GroupEssenceMsgRet[]>;
+  sendGroupNotice?: (groupId: number, content: string, options?: any) => Promise<any>;
+  getGroupNotice?: (groupId: number) => Promise<any[]>;
+  getCookiesStr?: (domain: string) => Promise<string>;
+  getCsrfToken?: () => Promise<number>;
+  getCredentials?: (domain: string) => Promise<{ cookies: string; token: number; csrf_token: number }>;
+  // Media lookup (populated from previously dispatched message segments)
+  getImageInfo?: (file: string) => Promise<JsonObject | null>;
+  getRecordInfo?: (file: string) => Promise<JsonObject | null>;
 }
 
 type ActionHandler = (params: JsonObject) => Promise<import('./types').ApiResponse>;

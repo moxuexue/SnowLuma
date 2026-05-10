@@ -94,12 +94,16 @@ function makeHighwayHead(
 }
 
 export function buildHighwayExtend(
-  uKey: string, msgInfo: any, ipv4s: any[], sha1: Uint8Array,
+  uKey: string,
+  msgInfo: any,
+  ipv4s: any[],
+  sha1: Uint8Array | Uint8Array[],
+  fileIndex = 0,
 ): Uint8Array {
   const msgInfoBody = msgInfo?.msgInfoBody ?? [];
   if (msgInfoBody.length === 0) throw new Error('upload response missing msg_info body');
 
-  const first = msgInfoBody[0];
+  const selected = msgInfoBody[fileIndex] ?? msgInfoBody[0];
   const networkIpv4s: any[] = [];
   for (const ipv4 of ipv4s ?? []) {
     const ip = ipv4.outIp ?? 0;
@@ -110,14 +114,14 @@ export function buildHighwayExtend(
   }
 
   return protoEncode({
-    fileUuid: first?.index?.fileUuid ?? '',
+    fileUuid: selected?.index?.fileUuid ?? '',
     uKey,
     network: { ipv4s: networkIpv4s },
     msgInfoBody: msgInfoBody.map((b: any) => ({
       index: b.index, picture: b.picture, fileExist: b.fileExist, hashSum: b.hashSum,
     })),
     blockSize: HIGHWAY_BLOCK_SIZE,
-    hash: { fileSha1: [sha1] },
+    hash: { fileSha1: Array.isArray(sha1) ? sha1 : [sha1] },
   }, NTV2RichMediaHighwayExtSchema);
 }
 

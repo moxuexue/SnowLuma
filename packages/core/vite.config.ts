@@ -26,7 +26,7 @@ const nativeSrc = toPosix(nativeDir);
 // Target selection: `SNOWLUMA_TARGET=<platform>-<arch>` overrides the host
 // detection, enabling cross-target packaging on CI.
 const targetTriple = process.env.SNOWLUMA_TARGET ?? `${process.platform}-${process.arch}`;
-const targetPlatform = targetTriple.split('-')[0];
+const [targetPlatform, targetArch] = targetTriple.split('-');
 
 // Runtime scaffolding files copied into dist/. The NTQQ hook is Windows-only,
 // so its launcher/shell script differ per target.
@@ -47,12 +47,22 @@ const nativeFiles = [
     : []),
 ];
 
+// FFmpeg native addon ported from NapCat. Uses NapCat's
+// `<platform>.<arch>` naming so the prebuilt binaries can be vendored
+// as-is without renaming. Lives under `native/ffmpeg/` to keep it
+// separate from the SnowLuma flat-naming addons above.
+const ffmpegAddonFile = `ffmpegAddon.${targetPlatform}.${targetArch}.node`;
+const ffmpegSrcDir = path.resolve(nativeDir, 'ffmpeg');
+
 // Fail fast if any expected native binary is missing from packages/runtime/native/.
 // vite-plugin-cp only emits a warning on missing source files; we want a hard
 // error so CI can't accidentally ship an incomplete archive.
 const missingNatives = nativeFiles.filter(
   (f) => !fs.existsSync(path.join(nativeDir, f)),
 );
+if (!fs.existsSync(path.join(ffmpegSrcDir, ffmpegAddonFile))) {
+  missingNatives.push(`ffmpeg/${ffmpegAddonFile}`);
+}
 if (missingNatives.length > 0) {
   throw new Error(
     `Missing native binaries for target ${targetTriple}:\n` +
@@ -73,6 +83,11 @@ const BaseConfigPlugin: PluginOption[] = [
         dest: path.join(distDir, 'native'),
         flatten: true,
       })),
+      {
+        src: `${toPosix(ffmpegSrcDir)}/${ffmpegAddonFile}`,
+        dest: path.join(distDir, 'native', 'ffmpeg'),
+        flatten: true,
+      },
     ]
   })
 ];
