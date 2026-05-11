@@ -239,16 +239,13 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and content are required');
     }
 
-    if (image) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented: image upload for group notice is not supported yet');
-    }
-
     if (!ctx.sendGroupNotice) {
       return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     }
 
     try {
       const options = {
+        image: image || undefined,
         pinned: params.pinned !== undefined ? Number(params.pinned) : 0,
         type: params.type !== undefined ? Number(params.type) : 1,
         confirm_required: params.confirm_required !== undefined ? Number(params.confirm_required) : 1,
@@ -277,8 +274,28 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
   });
 
-  h.registerAction('_del_group_notice', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('_del_group_notice', async (params) => {
+    const groupId = asNumber(params.group_id);
+    const fid = asString(params.fid) || asString(params.notice_id);
+
+    if (!groupId || !fid) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'group_id and fid/notice_id are required');
+    }
+
+    if (!ctx.deleteGroupNotice) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const success = await ctx.deleteGroupNotice(groupId, fid);
+      if (success) {
+        return okResponse();
+      } else {
+        return failedResponse(RETCODE.ACTION_FAILED, 'delete failed');
+      }
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
   // --- Forward messages ---
@@ -605,12 +622,26 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
   });
 
+  // todo 我的建议是引入数据库api   纯协议我不知道这种api怎么实现，ntQQ在实现这个方法的时候只进行了数据库查询，完全没碰网络
   h.registerAction('get_recent_contact', async () => {
     return okResponse([]);
   });
 
-  h.registerAction('get_profile_like', async () => {
-    return okResponse({});
+  h.registerAction('get_profile_like', async (params) => {
+    const userId = asNumber(params.user_id);
+    const start = asNumber(params.start) || 0;
+    const count = asNumber(params.count) || 10;
+
+    if (!ctx.getProfileLike) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const data = await ctx.getProfileLike(userId, start, count);
+      return okResponse(data);
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
   h.registerAction('get_friends_with_category', async () => {
@@ -622,6 +653,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
   // --- Additional NapCat-compatible stubs ---
 
+  ///napcat 似乎也用不了？？，暂时不管了
   h.registerAction('get_online_clients', async () => {
     return okResponse({ clients: [] });
   });
@@ -638,16 +670,55 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
   });
 
-  h.registerAction('get_group_at_all_remain', async () => {
-    return okResponse({ can_at_all: false, remain_at_all_count_for_group: 0, remain_at_all_count_for_uin: 0 });
+  h.registerAction('get_group_at_all_remain', async (params) => {
+    const groupId = asNumber(params.group_id);
+
+    if (!groupId) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid group_id');
+    }
+
+    if (!ctx.getGroupAtAllRemain) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const data = await ctx.getGroupAtAllRemain(groupId);
+      return okResponse(data);
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
   h.registerAction('get_unidirectional_friend_list', async () => {
-    return okResponse([]);
+    if (!ctx.getUnidirectionalFriendList) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const data = await ctx.getUnidirectionalFriendList();
+      return okResponse(data);
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
-  h.registerAction('set_self_longnick', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('set_self_longnick', async (params) => {
+    const longNick = params.longNick || params.long_nick;
+
+    if (typeof longNick !== 'string') {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid longNick');
+    }
+
+    if (!ctx.setSelfLongNick) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      await ctx.setSelfLongNick(longNick);
+      return okResponse({});
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
   h.registerAction('get_collection_list', async () => {
@@ -658,16 +729,66 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
   });
 
-  h.registerAction('set_qq_avatar', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('set_qq_avatar', async (params) => {
+    const file = asString(params.file);
+    if (!file) return failedResponse(RETCODE.BAD_REQUEST, 'file is required');
+
+    if (!ctx.setAvatar) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      await ctx.setAvatar(file);
+      return okResponse();
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
-  h.registerAction('set_input_status', async () => {
-    return okResponse();
+  h.registerAction('set_input_status', async (params) => {
+    const userId = asNumber(params.user_id);
+    const eventType = asNumber(params.event_type);
+
+    if (!userId) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid user_id');
+    }
+
+    // event_type 有可能是 0 (取消输入状态)，所以这里严格判断 undefined 或 isNaN
+    if (eventType === undefined || isNaN(eventType)) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid event_type');
+    }
+
+    if (!ctx.setInputStatus) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      await ctx.setInputStatus(userId, eventType);
+      return okResponse({});
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
-  h.registerAction('translate_en2zh', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('translate_en2zh', async (params) => {
+    const rawWords = params.words;
+
+    if (!Array.isArray(rawWords)) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid words array');
+    }
+
+    const words = rawWords.map(w => String(w));
+
+    if (!ctx.translateEn2Zh) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const translated = await ctx.translateEn2Zh(words);
+      return okResponse({ words: translated });
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
   h.registerAction('get_clientkey', async () => {
@@ -681,21 +802,81 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return okResponse(clientKeyInfo);
   });
 
-  h.registerAction('get_mini_app_ark', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('get_mini_app_ark', async (params) => {
+    const type = params.type || 'bili';
+    const title = params.title || '';
+    const desc = params.desc || '';
+    const picUrl = params.picUrl || params.pic_url || '';
+    const jumpUrl = params.jumpUrl || params.jump_url || '';
+
+    if (!ctx.getMiniAppArk) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const data = await ctx.getMiniAppArk(
+          String(type),
+          String(title),
+          String(desc),
+          String(picUrl),
+          String(jumpUrl)
+      );
+      return okResponse(data);
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
-  h.registerAction('click_inline_keyboard_button', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('click_inline_keyboard_button', async (params) => {
+    const groupId = asNumber(params.group_id);
+    const botAppid = asNumber(params.bot_appid);
+    const buttonId = params.button_id;
+    const callbackData = params.callback_data || '';
+    const msgSeq = asNumber(params.msg_seq);
+
+    if (!groupId || !botAppid || !buttonId || !msgSeq) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'missing required parameters');
+    }
+
+    if (!ctx.clickInlineKeyboardButton) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      const data = await ctx.clickInlineKeyboardButton(
+          groupId,
+          botAppid,
+          String(buttonId),
+          String(callbackData),
+          msgSeq
+      );
+      return okResponse(data);
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
   });
 
-  h.registerAction('set_group_sign', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
-  });
+  const handleGroupSign = async (params: any) => {
+    const groupId = asNumber(params.group_id);
 
-  h.registerAction('send_group_sign', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
-  });
+    if (!groupId) {
+      return failedResponse(RETCODE.BAD_REQUEST, 'invalid group_id');
+    }
+
+    if (!ctx.sendGroupSign) {
+      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
+    }
+
+    try {
+      await ctx.sendGroupSign(groupId);
+      return okResponse({});
+    } catch (e) {
+      return failedResponse(RETCODE.ACTION_FAILED, String(e));
+    }
+  };
+
+  h.registerAction('set_group_sign', handleGroupSign);
+  h.registerAction('send_group_sign', handleGroupSign);
 
   h.registerAction('get_group_info_ex', async (params) => {
     const groupId = asNumber(params.group_id);

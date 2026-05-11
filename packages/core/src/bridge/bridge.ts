@@ -67,6 +67,16 @@ import {
   fetchGroupFileCount as fetchGroupFileCount_,
   setOnlineStatus as setOnlineStatus_,
   setProfile as setProfile_,
+  getProfileLike as getProfileLike_,
+  getGroupAtAllRemain as getGroupAtAllRemain_,
+  getUnidirectionalFriendList as getUnidirectionalFriendList_,
+  setSelfLongNick as setSelfLongNick_,
+  setInputStatus as setInputStatus_,
+  translateEn2Zh as translateEn2Zh_,
+  getMiniAppArk as getMiniAppArk_,
+  clickInlineKeyboardButton as clickInlineKeyboardButton_,
+  sendGroupSign as sendGroupSign_,
+  setAvatar as setAvatar_,
 } from './bridge-actions';
 import {
   getGroupHonorInfo as getGroupHonorInfo_,
@@ -75,6 +85,7 @@ import {
   getGroupEssenceAll as getGroupEssenceAll_,
   sendGroupNotice as sendGroupNotice_,
   getGroupNotice as getGroupNotice_,
+  deleteGroupNoticeByFid as deleteGroupNotice_,
   getCookiesStr as getCookiesStr_,
   getCsrfToken as getCsrfToken_,
   getCredentials as getCredentials_,
@@ -492,8 +503,15 @@ export class Bridge {
     return getGroupNotice_(this, groupId);
   }
 
+  async deleteGroupNotice(groupId: number, fid: string): Promise<boolean> {
+    return deleteGroupNotice_(this, groupId, fid);
+  }
+
   async fetchGroupFileCount(groupId: number): Promise<{ fileCount: number; maxCount: number }> { return fetchGroupFileCount_(this, groupId); }
 
+  async getGroupAtAllRemain(groupId: number) {
+    return getGroupAtAllRemain_(this, groupId);
+  }
   // extend
   async setOnlineStatus(status: number, extStatus: number = 0, batteryStatus: number = 100): Promise<void> {
     return setOnlineStatus_(this, status, extStatus, batteryStatus);
@@ -504,7 +522,33 @@ export class Bridge {
   async getCookiesStr(domain: string): Promise<string> { return getCookiesStr_(this, domain); }
   async getCsrfToken(): Promise<number> { return getCsrfToken_(this); }
   async getCredentials(domain: string) { return getCredentials_(this, domain); }
-
+  async getProfileLike(userId?: number, start?: number, limit?: number) {
+    return getProfileLike_(this, userId, start, limit);
+  }
+  async getUnidirectionalFriendList() {
+    return getUnidirectionalFriendList_(this);
+  }
+  async setSelfLongNick(longNick: string) {
+    return setSelfLongNick_(this, longNick);
+  }
+  async setInputStatus(userId: number, eventType: number) {
+    return setInputStatus_(this, userId, eventType);
+  }
+  async translateEn2Zh(words: string[]) {
+    return translateEn2Zh_(this, words);
+  }
+  async getMiniAppArk(type: string, title: string, desc: string, picUrl: string, jumpUrl: string) {
+    return getMiniAppArk_(this, type, title, desc, picUrl, jumpUrl);
+  }
+  async clickInlineKeyboardButton(groupId: number, botAppid: number, buttonId: string, callbackData: string, msgSeq: number) {
+    return clickInlineKeyboardButton_(this, groupId, botAppid, buttonId, callbackData, msgSeq);
+  }
+  async sendGroupSign(groupId: number) {
+    return sendGroupSign_(this, groupId);
+  }
+  async setAvatar(source: string): Promise<void> {
+    return setAvatar_(this, source);
+  }
 }
 
 // --- Module-level helper functions ---

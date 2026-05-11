@@ -55,6 +55,7 @@ export interface ApiActionContext {
   setGroupName?: (groupId: number, name: string) => Promise<void>;
   setGroupLeave?: (groupId: number) => Promise<void>;
   setGroupSpecialTitle?: (groupId: number, userId: number, title: string) => Promise<void>;
+  getGroupAtAllRemain?: (groupId: number) => Promise<any>;
   // Group file
   uploadGroupFile?: (groupId: number, file: string, name?: string, folderId?: string, uploadFile?: boolean) => Promise<string | null>;
   uploadPrivateFile?: (userId: number, file: string, name?: string, uploadFile?: boolean) => Promise<string | null>;
@@ -78,6 +79,13 @@ export interface ApiActionContext {
   forceFetchClientKey? : () => Promise<{clientKey: string, keyIndex: string, expireTime: string}>;
   setOnlineStatus?: (status: number, extStatus?: number, batteryStatus?: number) => Promise<void>;
   setProfile?: (nickname?: string, personalNote?: string) => Promise<void>;
+  getUnidirectionalFriendList?: () => Promise<any>;
+  setSelfLongNick?: (longNick: string) => Promise<void>;
+  setInputStatus?: (userId: number, eventType: number) => Promise<void>;
+  translateEn2Zh?: (words: string[]) => Promise<string[]>;
+  getMiniAppArk?: (type: string, title: string, desc: string, picUrl: string, jumpUrl: string) => Promise<any>;
+  clickInlineKeyboardButton?: (groupId: number, botAppid: number, buttonId: string, callbackData: string, msgSeq: number) => Promise<any>;
+  sendGroupSign?: (groupId: number) => Promise<void>;
   // New context methods
   setGroupReaction?: (groupId: number, sequence: number, code: string, isSet: boolean) => Promise<void>;
   handleDeleteFriend?: (userId: number, block?: boolean) => Promise<void>;
@@ -96,18 +104,22 @@ export interface ApiActionContext {
   setMsgEmojiLike?: (messageId: number, emojiId: string, set: boolean) => Promise<void>;
   markGroupMsgAsRead?: (groupId: number, sequence: number) => Promise<void>;
   markPrivateMsgAsRead?: (userId: number, sequence: number) => Promise<void>;
+  getProfileLike?: (userId?: number, start?: number, limit?: number) => Promise<any>;
   // Web
   getGroupHonorInfo?: (groupId: number, type: WebHonorType | string) => Promise<any>;
   getGroupEssence?: (groupId: number, pageStart?: number, pageLimit?: number) => Promise<GroupEssenceMsgRet>;
   getGroupEssenceAll?: (groupId: number) => Promise<GroupEssenceMsgRet[]>;
   sendGroupNotice?: (groupId: number, content: string, options?: any) => Promise<any>;
   getGroupNotice?: (groupId: number) => Promise<any[]>;
+  deleteGroupNotice?: (groupId: number, fid: string) => Promise<boolean>;
   getCookiesStr?: (domain: string) => Promise<string>;
   getCsrfToken?: () => Promise<number>;
   getCredentials?: (domain: string) => Promise<{ cookies: string; token: number; csrf_token: number }>;
   // Media lookup (populated from previously dispatched message segments)
   getImageInfo?: (file: string) => Promise<JsonObject | null>;
   getRecordInfo?: (file: string) => Promise<JsonObject | null>;
+  // Avatar
+  setAvatar?: (source: string) => Promise<void>;
 }
 
 type ActionHandler = (params: JsonObject) => Promise<import('./types').ApiResponse>;

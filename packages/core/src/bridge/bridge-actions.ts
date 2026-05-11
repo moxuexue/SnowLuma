@@ -47,6 +47,24 @@ import {
   SetStatusReqSchema,
   SetStatusRespSchema,
   OidbSetProfileSchema,
+  Oidb0x7edReqSchema,
+  Oidb0x7edRespSchema,
+  Oidb0x8a7RespSchema,
+  Oidb0x8a7ReqSchema,
+  Oidb0xe17RespSchema,
+  Oidb0xe17ReqSchema,
+  Oidb0x112aReqSchema,
+  Oidb0x112aRespSchema,
+  Oidb0xcd4ReqSchema,
+  Oidb0xcd4RespSchema,
+  Oidb0x990ReqSchema,
+  Oidb0x990RespSchema,
+  MiniAppShareReqSchema,
+  MiniAppShareRespSchema,
+  Oidb0x112eReqSchema,
+  Oidb0x112eRespSchema,
+  Oidb0xeb7ReqSchema,
+  Oidb0xeb7RespSchema,
 } from './proto/oidb-action';
 import { FileUploadExtSchema } from './proto/highway';
 import {
@@ -1359,3 +1377,358 @@ export async function setProfile(
       OidbSetProfileSchema
   );
 }
+
+
+export async function getProfileLike(
+    bridge: Bridge,
+    userId?: number,
+    start: number = 0,
+    limit: number = 10
+) {
+
+  // const isSelf = !userId || userId === bridge.qqInfo.uin;
+  // const targetUid = isSelf
+  //     ? bridge.qqInfo.uid
+  //     : await bridge.getUidByUinV2(userId!);
+
+
+  const isSelf = !userId
+  const targetUid = isSelf
+      ? await resolveSelfUid(bridge)
+      : await resolveUserUid(bridge, userId)
+
+  if (!targetUid) {
+    throw new Error('target uid not found');
+  }
+
+  const req = {
+    targetUid: targetUid,
+    basic: 1,
+    vote: 1,
+    favorite: 1,
+    start: start,
+    limit: limit,
+  };
+
+  const result = await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0x7ed_12',
+      0x7ED,
+      12,
+      req,
+      Oidb0x7edReqSchema,
+      Oidb0x7edRespSchema
+  );
+
+  const data = result?.userLikeInfos?.[0];
+  if (!data) {
+    throw new Error('get profile like info empty');
+  }
+
+  return {
+    uid: data.uid,
+    time: Number(data.time),
+    favoriteInfo: {
+      total_count: data.favoriteInfo?.totalCount || 0,
+      last_time: Number(data.favoriteInfo?.lastTime || 0),
+      today_count: data.favoriteInfo?.newCount || 0,
+      userInfos: []
+    },
+    voteInfo: {
+      total_count: data.voteInfo?.totalCount || 0,
+      new_count: data.voteInfo?.newCount || 0,
+      new_nearby_count: 0,
+      last_visit_time: Number(data.voteInfo?.lastTime || 0),
+      userInfos: []
+    }
+  };
+}
+
+export async function getGroupAtAllRemain(
+    bridge: Bridge,
+    groupId: number
+) {
+  const req = {
+    basic1: 1,
+    basic2: 2,
+    basic3: 1,
+    uin: BigInt(bridge.qqInfo.uin),
+    groupId: BigInt(groupId),
+    type: 0,
+  };
+
+  const result = await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0x8a7_0',
+      0x8A7,
+      0,
+      req,
+      Oidb0x8a7ReqSchema,
+      Oidb0x8a7RespSchema
+  );
+
+  if (!result) {
+    throw new Error('get group at all remain result empty');
+  }
+
+  return {
+    can_at_all: !!result.canAtAll,
+    remain_at_all_count_for_group: Number(result.groupRemain || 0), // 【修改点】：防止底层库将 uint32 也返回成 BigInt 导致无法被 JSON 序列化
+    remain_at_all_count_for_uin: Number(result.uinRemain || 0)      // 【修改点】：同上
+  };
+}
+
+export async function getUnidirectionalFriendList(
+    bridge: Bridge
+) {
+  const reqObj = {
+    uint64_uin: String(bridge.qqInfo.uin),
+    uint64_top: 0,
+    uint32_req_num: 99,
+    bytes_cookies: ""
+  };
+
+  const req = {
+    jsonBody: JSON.stringify(reqObj)
+  };
+
+  const result = await sendOidbAndDecode<any>(
+      bridge,
+      'MQUpdateSvc_com_qq_ti.web.OidbSvc.0xe17_0',
+      0xE17,
+      0,
+      req,
+      Oidb0xe17ReqSchema,
+      Oidb0xe17RespSchema
+  );
+
+  if (!result || !result.jsonBody) {
+    throw new Error('get unidirectional friend list empty');
+  }
+
+  const parsed = JSON.parse(result.jsonBody);
+  return parsed.rpt_block_list || [];
+}
+
+export async function setSelfLongNick(
+    bridge: Bridge,
+    longNick: string
+) {
+  const req = {
+    uin: BigInt(bridge.qqInfo.uin),
+    profile: {
+      tag: 102,
+      value: String(longNick)
+    }
+  };
+
+  await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0x112a_2',
+      0x112A,
+      2,
+      req,
+      Oidb0x112aReqSchema,
+      Oidb0x112aRespSchema
+  );
+}
+
+export async function setInputStatus(
+    bridge: Bridge,
+    userId: number,
+    eventType: number
+) {
+  const targetUid = await resolveUserUid(bridge, userId);
+
+  if (!targetUid) {
+    throw new Error('target uid not found');
+  }
+
+  const req = {
+    reqBody: {
+      uid: targetUid,
+      chatType: 0,
+      eventType: eventType
+    }
+  };
+
+  await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0xcd4_1',
+      0xCD4,
+      1,
+      req,
+      Oidb0xcd4ReqSchema,
+      Oidb0xcd4RespSchema
+  );
+}
+
+export async function translateEn2Zh(
+    bridge: Bridge,
+    words: string[]
+) {
+  const req = {
+    translateReq: {
+      srcLang: 'en',
+      dstLang: 'zh',
+      words: words
+    },
+    tag10: 1,
+    tag12: 1
+  };
+
+  const result = await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0x990_2',
+      0x990,
+      2,
+      req,
+      Oidb0x990ReqSchema,
+      Oidb0x990RespSchema
+  );
+
+  const resp = result?.translateResp;
+  if (!resp) {
+    throw new Error('translate response empty');
+  }
+
+  return resp.dstWords || [];
+}
+
+export async function getMiniAppArk(
+    bridge: Bridge,
+    type: string,
+    title: string,
+    desc: string,
+    picUrl: string,
+    jumpUrl: string
+) {
+  let appid = "1109937557"; // 默认 bili
+  let iconUrl = "http://miniapp.gtimg.cn/public/appicon/51f90239b78a2e4994c11215f4c4ba15_200.jpg";
+
+  if (type === 'weibo') {
+    appid = "1109224783";
+    iconUrl = "http://miniapp.gtimg.cn/public/appicon/35bbb44dc68e65194cfacfb206b8f1f7_200.jpg";
+  } else if (type !== 'bili') {
+    throw new Error(`unsupported type: ${type}, only support bili and weibo`);
+  }
+
+  const request = protoEncode({
+    sdkVersion: "V1_PC_MINISDK_99.99.99_1_APP_A",
+    body: {
+      appid,
+      title,
+      desc,
+      picUrl,
+      jumpUrl,
+      iconUrl
+    }
+  }, MiniAppShareReqSchema);
+
+  const result = await bridge.sendRawPacket('LightAppSvc.mini_app_share.AdaptShareInfo', request);
+
+  if (!result.success || !result.responseData) {
+    throw new Error(result.errorMessage || 'get mini app ark failed');
+  }
+
+  const decoded = protoDecode(result.responseData, MiniAppShareRespSchema);
+  const jsonStr = decoded?.body?.jsonStr;
+
+  if (!jsonStr) {
+    throw new Error('mini app share json empty');
+  }
+
+  const parsed = JSON.parse(jsonStr);
+
+  return {
+    data: {
+      ver: parsed.ver,
+      prompt: parsed.prompt,
+      config: parsed.config,
+      app: parsed.appName,
+      view: parsed.appView,
+      meta: parsed.metaData,
+      miniappShareOrigin: 3,
+      miniappOpenRefer: "10002"
+    }
+  };
+}
+
+export async function clickInlineKeyboardButton(
+    bridge: Bridge,
+    groupId: number,
+    botAppid: number,
+    buttonId: string,
+    callbackData: string,
+    msgSeq: number
+) {
+  const req = {
+    botAppid: BigInt(botAppid),
+    msgSeq: BigInt(msgSeq),
+    buttonId: String(buttonId),
+    callbackData: String(callbackData || ''),
+    unknown7: 0,
+    groupId: BigInt(groupId),
+    unknown9: 1,
+  };
+
+  const result = await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0x112e_1',
+      0x112E,
+      1,
+      req,
+      Oidb0x112eReqSchema,
+      Oidb0x112eRespSchema
+  );
+
+  if (!result) {
+    throw new Error('click inline keyboard button result empty');
+  }
+
+  return {
+    result: Number(result.result || 0),
+    errMsg: result.errMsg || '',
+    status: 0,
+    promptText: result.promptText || '',
+    promptType: 0,
+    promptIcon: 0
+  };
+}
+
+
+export async function sendGroupSign(
+    bridge: Bridge,
+    groupId: number
+) {
+  const req = {
+    signInInfo: {
+      uin: String(bridge.qqInfo.uin),
+      groupId: String(groupId),
+      version: "9.0.90"
+    }
+  };
+
+  await sendOidbAndDecode<any>(
+      bridge,
+      'OidbSvcTrpcTcp.0xEB7_1',
+      0xEB7,
+      1,
+      req,
+      Oidb0xeb7ReqSchema,
+      Oidb0xeb7RespSchema
+  );
+}
+
+export async function setAvatar(
+  bridge: Bridge,
+  source: string,
+): Promise<void> {
+  const loaded = await loadBinarySource(source, 'avatar');
+  if (!loaded.bytes.length) throw new Error('avatar file is empty');
+
+  const hashes = computeHashes(loaded.bytes);
+  const session = await fetchHighwaySession(bridge);
+  await uploadHighwayHttp(bridge, session, 90, loaded.bytes, hashes.md5, new Uint8Array(0));
+}
+

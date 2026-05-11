@@ -863,3 +863,159 @@ export const OidbSetProfileSchema = {
   stringProfiles: { field: 2, type: 'repeated_message' as const, schema: OidbProfileStringItemSchema },
   intProfiles:    { field: 3, type: 'repeated_message' as const, schema: OidbProfileIntItemSchema },
 } satisfies ProtoSchema;
+
+
+export const Oidb0x7edInteractionSchema = {
+  totalCount: { field: 1, type: 'uint32' as const },
+  newCount:   { field: 2, type: 'uint32' as const },
+  todayCount: { field: 3, type: 'uint32' as const },
+  lastTime:   { field: 4, type: 'uint64' as const },
+  // userInfos: { field: 7, type: 'repeated_message' ... } // 我没有这个字段，期待未来补全
+} satisfies ProtoSchema;
+
+export const Oidb0x7edUserLikeInfoSchema = {
+  uid:          { field: 1, type: 'string' as const },
+  time:         { field: 2, type: 'uint64' as const },
+  favoriteInfo: { field: 3, type: 'message' as const, schema: Oidb0x7edInteractionSchema },
+  voteInfo:     { field: 4, type: 'message' as const, schema: Oidb0x7edInteractionSchema },
+} satisfies ProtoSchema;
+
+export const Oidb0x7edReqSchema = {
+  targetUid: { field: 1, type: 'string' as const },
+  basic:     { field: 2, type: 'uint32' as const },
+  vote:      { field: 3, type: 'uint32' as const },
+  favorite:  { field: 4, type: 'uint32' as const },
+  start:     { field: 12, type: 'uint32' as const },
+  limit:     { field: 103, type: 'uint32' as const }, // 0xB8 0x06
+} satisfies ProtoSchema;
+
+export const Oidb0x7edRespSchema = {
+  userLikeInfos: { field: 1, type: 'repeated_message' as const, schema: Oidb0x7edUserLikeInfoSchema },
+} satisfies ProtoSchema;
+
+
+export const Oidb0x8a7ReqSchema = {
+  basic1:  { field: 1, type: 'uint32' as const },
+  basic2:  { field: 2, type: 'uint32' as const },
+  basic3:  { field: 3, type: 'uint32' as const },
+  uin:     { field: 4, type: 'uint64' as const },
+  groupId: { field: 5, type: 'uint64' as const },
+  type:    { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x8a7RespSchema = {
+  uinRemain:   { field: 2, type: 'uint32' as const },
+  groupRemain: { field: 3, type: 'uint32' as const },
+  msg:         { field: 4, type: 'string' as const },
+  canAtAll:    { field: 6, type: 'bool' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xe17ReqSchema = {
+  jsonBody: { field: 3, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xe17RespSchema = {
+  jsonBody: { field: 4, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x112aProfileInfoSchema = {
+  tag:   { field: 1, type: 'uint32' as const },
+  value: { field: 2, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x112aReqSchema = {
+  uin:     { field: 1, type: 'uint64' as const },
+  profile: { field: 2, type: 'message' as const, schema: Oidb0x112aProfileInfoSchema },
+} satisfies ProtoSchema;
+
+export const Oidb0x112aRespSchema = {} satisfies ProtoSchema;
+
+export const Oidb0xcd4ReqBodySchema = {
+  uid:       { field: 1, type: 'string' as const },
+  chatType:  { field: 2, type: 'uint32' as const }, // 默认为 0
+  eventType: { field: 3, type: 'uint32' as const }, // 输入状态 1 等
+} satisfies ProtoSchema;
+
+export const Oidb0xcd4ReqSchema = {
+  reqBody: { field: 1, type: 'message' as const, schema: Oidb0xcd4ReqBodySchema },
+} satisfies ProtoSchema;
+
+export const Oidb0xcd4RespSchema = {} satisfies ProtoSchema;
+
+
+export const Oidb0x990TranslateReqSchema = {
+  srcLang: { field: 1, type: 'string' as const },
+  dstLang: { field: 2, type: 'string' as const },
+  words:   { field: 3, type: 'repeated_string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x990ReqSchema = {
+  translateReq: { field: 2, type: 'message' as const, schema: Oidb0x990TranslateReqSchema },
+  tag10:        { field: 10, type: 'uint32' as const },
+  tag12:        { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x990TranslateRespSchema = {
+  errorCode: { field: 1, type: 'uint32' as const },
+  errorMsg:  { field: 2, type: 'string' as const },
+  srcLang:   { field: 3, type: 'string' as const },
+  dstLang:   { field: 4, type: 'string' as const },
+  srcWords:  { field: 5, type: 'repeated_string' as const },
+  dstWords:  { field: 6, type: 'repeated_string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x990RespSchema = {
+  translateResp: { field: 2, type: 'message' as const, schema: Oidb0x990TranslateRespSchema }
+} satisfies ProtoSchema;
+
+export const MiniAppShareReqBodySchema = {
+  appid:   { field: 2, type: 'string' as const },
+  title:   { field: 3, type: 'string' as const },
+  desc:    { field: 4, type: 'string' as const },
+  picUrl:  { field: 9, type: 'string' as const },
+  jumpUrl: { field: 11, type: 'string' as const },
+  iconUrl: { field: 12, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const MiniAppShareReqSchema = {
+  sdkVersion: { field: 2, type: 'string' as const },
+  body:       { field: 4, type: 'message' as const, schema: MiniAppShareReqBodySchema },
+} satisfies ProtoSchema;
+
+export const MiniAppShareRespBodySchema = {
+  jsonStr: { field: 2, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const MiniAppShareRespSchema = {
+  status: { field: 2, type: 'uint32' as const },
+  msg:    { field: 3, type: 'string' as const },
+  body:   { field: 4, type: 'message' as const, schema: MiniAppShareRespBodySchema },
+} satisfies ProtoSchema;
+
+export const Oidb0x112eReqSchema = {
+  botAppid:     { field: 3, type: 'uint64' as const },
+  msgSeq:       { field: 4, type: 'uint64' as const },
+  buttonId:     { field: 5, type: 'string' as const },
+  callbackData: { field: 6, type: 'string' as const },
+  unknown7:     { field: 7, type: 'uint32' as const },
+  groupId:      { field: 8, type: 'uint64' as const },
+  unknown9:     { field: 9, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x112eRespSchema = {
+  result:     { field: 3, type: 'uint32' as const },
+  promptText: { field: 4, type: 'string' as const },
+  errMsg:     { field: 5, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xeb7SignInInfoSchema = {
+  uin:     { field: 1, type: 'string' as const },
+  groupId: { field: 2, type: 'string' as const },
+  version: { field: 3, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xeb7ReqSchema = {
+  signInInfo: { field: 2, type: 'message' as const, schema: Oidb0xeb7SignInInfoSchema },
+} satisfies ProtoSchema;
+
+export const Oidb0xeb7RespSchema = {} satisfies ProtoSchema;

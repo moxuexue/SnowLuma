@@ -79,6 +79,7 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
     setGroupName: (groupId, name) => bridge.setGroupName(groupId, name),
     setGroupLeave: (groupId) => bridge.leaveGroup(groupId),
     setGroupSpecialTitle: (groupId, userId, title) => bridge.setGroupSpecialTitle(groupId, userId, title),
+    getGroupAtAllRemain: (groupId) => bridge.getGroupAtAllRemain(groupId),
     // Group file
     uploadGroupFile: async (groupId, file, name, folderId, uploadFile) => {
       const result = await bridge.uploadGroupFile(groupId, file, name ?? '', folderId ?? '/', uploadFile ?? true);
@@ -105,6 +106,14 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
     sendGroupPoke: (groupId, userId) => bridge.sendPoke(true, groupId, userId),
     setEssenceMsg: (messageId) => handleSetEssence(bridge, messageStore, messageId, true),
     deleteEssenceMsg: (messageId) => handleSetEssence(bridge, messageStore, messageId, false),
+    getProfileLike: (userId?: number, start: number = 0, limit: number = 10) => bridge.getProfileLike(userId, start, limit),
+    getUnidirectionalFriendList: () => bridge.getUnidirectionalFriendList(),
+    setSelfLongNick: (longNick) => bridge.setSelfLongNick(longNick),
+    setInputStatus: (userId, eventType) => bridge.setInputStatus(userId, eventType),
+    translateEn2Zh: (words) => bridge.translateEn2Zh(words),
+    getMiniAppArk: (type, title, desc, picUrl, jumpUrl) => bridge.getMiniAppArk(type, title, desc, picUrl, jumpUrl),
+    clickInlineKeyboardButton: (groupId, botAppid, buttonId, callbackData, msgSeq) => bridge.clickInlineKeyboardButton(groupId, botAppid, buttonId, callbackData, msgSeq),
+    sendGroupSign: (groupId) => bridge.sendGroupSign(groupId),
     // New extended
     setGroupReaction: (groupId, sequence, code, isSet) => bridge.setGroupReaction(groupId, sequence, code, isSet),
     handleDeleteFriend: (userId, block) => bridge.deleteFriend(userId, !!block),
@@ -161,12 +170,15 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
     getGroupEssenceAll: (groupId: number) => bridge.getGroupEssenceAll(groupId),
     sendGroupNotice: (groupId: number, content: string, options?: any) => bridge.sendGroupNotice(groupId, content, options),
     getGroupNotice: (groupId: number) => bridge.getGroupNotice(groupId),
+    deleteGroupNotice: (groupId: number, fid: string) => bridge.deleteGroupNotice(groupId, fid),
     getCookiesStr: (domain: string) => bridge.getCookiesStr(domain),
     getCsrfToken: () => bridge.getCsrfToken(),
     getCredentials: (domain: string) => bridge.getCredentials(domain),
     // Media lookup
     getImageInfo: (file) => handleGetImageInfo(mediaStore, file),
     getRecordInfo: (file) => handleGetRecordInfo(bridge, mediaStore, file),
+    // Avatar
+    setAvatar: (source: string) => bridge.setAvatar(source),
   };
 }
 
