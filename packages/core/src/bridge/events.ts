@@ -98,6 +98,8 @@ export interface GroupMemberJoin extends QQEvent {
   groupId: number;
   userUin: number;
   operatorUin: number;
+  userUid?: string;
+  operatorUid?: string;
 }
 
 export interface GroupMemberLeave extends QQEvent {
@@ -105,6 +107,8 @@ export interface GroupMemberLeave extends QQEvent {
   groupId: number;
   userUin: number;
   operatorUin: number;
+  userUid?: string;
+  operatorUid?: string;
   isKick: boolean;
 }
 
@@ -140,6 +144,7 @@ export interface GroupRecallEvent extends QQEvent {
 export interface FriendRequestEvent extends QQEvent {
   kind: 'friend_request';
   fromUin: number;
+  fromUid?: string;
   message: string;
   flag: string;
 }
@@ -148,6 +153,7 @@ export interface GroupInviteEvent extends QQEvent {
   kind: 'group_invite';
   groupId: number;
   fromUin: number;
+  fromUid?: string;
   subType: string;
   message: string;
   flag: string;

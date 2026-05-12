@@ -135,7 +135,7 @@ export class EventConverter {
           self_id: selfId,
           post_type: 'notice',
           notice_type: 'group_increase',
-          sub_type: event.operatorUin === event.userUin ? 'approve' : 'invite',
+          sub_type: isSameActor(event.operatorUin, event.operatorUid, event.userUin, event.userUid) ? 'approve' : 'invite',
           group_id: event.groupId,
           operator_id: event.operatorUin,
           user_id: event.userUin,
@@ -328,6 +328,11 @@ export class EventConverter {
 function parseSelfId(instanceUin: string): number {
   const parsed = Number.parseInt(instanceUin, 10);
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function isSameActor(leftUin: number, leftUid: string | undefined, rightUin: number, rightUid: string | undefined): boolean {
+  if (leftUin > 0 && rightUin > 0) return leftUin === rightUin;
+  return Boolean(leftUid) && leftUid === rightUid;
 }
 
 async function elementsToJson(

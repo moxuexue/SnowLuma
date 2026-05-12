@@ -10,6 +10,7 @@ import { MSG_PUSH_CMD, parseMsgPush } from './handlers/msg-push-handler';
 import type { PacketSender, SendPacketResult } from '../protocol/packet-sender';
 import { protoEncode, protoDecode } from '../protobuf/decode';
 import { buildSendElems } from './builders/element-builder';
+import { IdentityService } from './identity-service';
 import { createLogger } from '../utils/logger';
 import {
   SendMessageRequestSchema,
@@ -30,7 +31,10 @@ import type { WebHonorType } from './web/group-honor';
 import {
   muteGroupMember as muteGroupMember_,
   muteGroupAll as muteGroupAll_,
+  setGroupAddOption as setGroupAddOption_,
+  setGroupSearch as setGroupSearch_,
   kickGroupMember as kickGroupMember_,
+  kickGroupMembers as kickGroupMembers_,
   leaveGroup as leaveGroup_,
   setGroupAdmin as setGroupAdmin_,
   setGroupCard as setGroupCard_,
@@ -64,6 +68,7 @@ import {
   markPrivateMessageRead as markGroupMsgAsRead_,
   markGroupMessageRead as markPrivateMsgAsRead_,
   setFriendRemark as setFriendRemark_,
+  setGroupRemark as setGroupRemark_,
   fetchGroupFileCount as fetchGroupFileCount_,
   setOnlineStatus as setOnlineStatus_,
   setProfile as setProfile_,
@@ -77,6 +82,8 @@ import {
   clickInlineKeyboardButton as clickInlineKeyboardButton_,
   sendGroupSign as sendGroupSign_,
   setAvatar as setAvatar_,
+  fetchCustomFace as fetchCustomFace_,
+  getEmojiLikes as getEmojiLikes_,
 } from './bridge-actions';
 import {
   getGroupHonorInfo as getGroupHonorInfo_,
@@ -118,6 +125,8 @@ export interface ClientKeyInfo {
   keyIndex: string
 }
 
+type GroupMemberIdentityEvent = Extract<QQEventVariant, { kind: 'group_member_join' | 'group_member_leave' }>;
+
 const log = createLogger('Bridge');
 const eventLog = createLogger('Event');
 
@@ -125,6 +134,7 @@ export class Bridge {
   private static readonly SEND_MSG_CMD = 'MessageSvc.PbSendMsg';
 
   private qqInfo_: QQInfo;
+  readonly identity: IdentityService;
   private pids_ = new Set<number>();
   /**
    * Per-kind event subscription. Replaces the legacy single-callback
@@ -149,12 +159,18 @@ export class Bridge {
   private clientSeq_ = 100000000 + (Date.now() % 1000000000);
   private msgRandom_ = (Date.now() & 0xFFFFFFFF) >>> 0;
 
-  constructor(qqInfo: QQInfo) {
+  constructor(qqInfo: QQInfo, identity = IdentityService.memory(qqInfo)) {
     this.qqInfo_ = qqInfo;
+    this.identity = identity;
     this.registerDefaultHandlers();
   }
 
   get qqInfo(): QQInfo { return this.qqInfo_; }
+
+  dispose(): void {
+    this.identity.close();
+    this.events.clear();
+  }
 
   setPacketClient(client: PacketSender): void {
     this.packetClient_ = client;
@@ -199,14 +215,36 @@ export class Bridge {
       try {
         const events = handler(pkt, this.qqInfo_);
         for (const event of events) {
-          this.triggerMemberCacheRefresh(event);
-          printEvent(event);
-          this.emitEvent(event);
+          if (this.needsPreDispatchIdentityRefresh(event)) {
+            void this.dispatchAfterIdentityRefresh(event);
+          } else {
+            this.triggerMemberCacheRefresh(event);
+            printEvent(event);
+            this.emitEvent(event);
+          }
         }
       } catch (e) {
         log.error('handler error for %s: %s', pkt.serviceCmd, e instanceof Error ? (e.stack ?? e.message) : String(e));
       }
     }
+  }
+
+  private needsPreDispatchIdentityRefresh(event: QQEventVariant): event is Extract<QQEventVariant, { kind: 'group_member_join' }> {
+    return event.kind === 'group_member_join' && event.groupId > 0 && event.userUin <= 0 && Boolean(event.userUid);
+  }
+
+  private async dispatchAfterIdentityRefresh(event: Extract<QQEventVariant, { kind: 'group_member_join' }>): Promise<void> {
+    let refreshed = false;
+    try {
+      refreshed = await this.prepareGroupMemberJoinIdentity(event);
+    } catch (e) {
+      log.warn('failed to resolve group member join identity: group=%d uid=%s err=%s',
+        event.groupId, event.userUid ?? '', e instanceof Error ? e.message : String(e));
+    }
+
+    this.triggerMemberCacheRefresh(event, refreshed);
+    printEvent(event);
+    this.emitEvent(event);
   }
 
   private emitEvent(event: QQEventVariant): void {
@@ -215,7 +253,44 @@ export class Bridge {
     void this.events.emit(event);
   }
 
-  private triggerMemberCacheRefresh(event: QQEventVariant): void {
+  private async prepareGroupMemberJoinIdentity(event: Extract<QQEventVariant, { kind: 'group_member_join' }>): Promise<boolean> {
+    this.resolveMemberIdentityFromCache(event);
+    if (event.userUin > 0 || !event.userUid || event.groupId <= 0) return false;
+
+    const refreshed = await this.refreshMemberCache(
+      event.groupId,
+      !this.qqInfo_.findGroup(event.groupId) || this.isSelfMemberIdentity(event.userUin, event.userUid),
+      true,
+    );
+    this.resolveMemberIdentityFromCache(event);
+    return refreshed;
+  }
+
+  private resolveMemberIdentityFromCache(event: GroupMemberIdentityEvent): void {
+    if (event.groupId <= 0) return;
+    if (event.userUin <= 0 && event.userUid) {
+      const uin = this.resolveUidFromCache(event.groupId, event.userUid);
+      if (uin !== null) event.userUin = uin;
+    }
+    if (event.operatorUin <= 0 && event.operatorUid) {
+      const uin = this.resolveUidFromCache(event.groupId, event.operatorUid);
+      if (uin !== null) event.operatorUin = uin;
+    }
+  }
+
+  private resolveUidFromCache(groupId: number, uid: string): number | null {
+    return this.identity.findUinByUid(uid, groupId);
+  }
+
+  private isSelfMemberIdentity(uin: number, uid?: string): boolean {
+    const selfUin = Number(this.qqInfo_.uin);
+    return (uin > 0 && uin === selfUin) || (Boolean(uid) && uid === this.qqInfo_.selfUid);
+  }
+
+  private triggerMemberCacheRefresh(event: QQEventVariant, alreadyRefreshed = false): void {
+    this.rememberEventIdentity(event);
+    if (alreadyRefreshed) return;
+
     let groupId = 0;
     let reason = '';
     let refreshGroupList = false;
@@ -223,7 +298,7 @@ export class Bridge {
       case 'group_member_join':
         groupId = event.groupId;
         reason = 'group_member_join';
-        refreshGroupList = event.userUin === Number(this.qqInfo_.uin);
+        refreshGroupList = this.isSelfMemberIdentity(event.userUin, event.userUid);
         break;
       case 'group_member_leave':
         groupId = event.groupId;
@@ -239,15 +314,13 @@ export class Bridge {
 
     if (groupId <= 0) return;
     if (this.memberRefreshTasks_.has(groupId)) return;
+    if (event.kind === 'group_member_join' && !this.qqInfo_.findGroup(groupId)) {
+      refreshGroupList = true;
+    }
 
     const task = (async () => {
       try {
-        if (refreshGroupList) {
-          try { await this.fetchGroupList(); } catch { /* ignore */ }
-        }
-        if (this.qqInfo_.findGroup(groupId)) {
-          await this.fetchGroupMemberList(groupId);
-        }
+        await this.refreshMemberCache(groupId, refreshGroupList, false);
         log.debug('member cache refreshed: group=%d reason=%s', groupId, reason);
       } catch (e) {
         log.warn('failed to refresh member cache: group=%d reason=%s err=%s',
@@ -258,6 +331,62 @@ export class Bridge {
     })();
 
     this.memberRefreshTasks_.set(groupId, task);
+  }
+
+  private rememberEventIdentity(event: QQEventVariant): void {
+    switch (event.kind) {
+      case 'group_member_join':
+        this.identity.rememberGroupMemberIdentity(event.groupId, {
+          uid: event.userUid,
+          uin: event.userUin,
+        });
+        this.identity.rememberGroupMemberIdentity(event.groupId, {
+          uid: event.operatorUid,
+          uin: event.operatorUin,
+        });
+        break;
+      case 'group_member_leave':
+        this.identity.markGroupMemberInactive(event.groupId, {
+          uid: event.userUid,
+          uin: event.userUin,
+        });
+        this.identity.rememberGroupMemberIdentity(event.groupId, {
+          uid: event.operatorUid,
+          uin: event.operatorUin,
+        });
+        break;
+      case 'group_admin':
+        this.identity.rememberGroupMemberIdentity(event.groupId, {
+          uin: event.userUin,
+        });
+        break;
+      case 'friend_request':
+        this.identity.rememberRequestIdentity({
+          uid: event.fromUid,
+          uin: event.fromUin,
+          source: 'friend_request',
+        });
+        break;
+      case 'group_invite':
+        this.identity.rememberRequestIdentity({
+          groupId: event.groupId,
+          uid: event.fromUid,
+          uin: event.fromUin,
+          source: 'group_request',
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  private async refreshMemberCache(groupId: number, refreshGroupList: boolean, forceMemberList: boolean): Promise<boolean> {
+    if (refreshGroupList) {
+      try { await this.fetchGroupList(); } catch { /* ignore */ }
+    }
+    if (!this.qqInfo_.findGroup(groupId)) return false;
+    await this.fetchGroupMemberList(groupId, { force: forceMemberList });
+    return true;
   }
 
   // --- Sequence / random generators ---
@@ -341,7 +470,7 @@ export class Bridge {
   async sendPrivateMessage(userUin: number, elements: MessageElement[]): Promise<SendMessageReceipt> {
     if (elements.length === 0) throw new Error('message is empty');
 
-    // Resolve UID for image upload (C++ resolves UID before building elems)
+    // Resolve UID for media upload and the final c2c routing head.
     let userUid = '';
     const hasMedia = elements.some(e => e.type === 'image' || e.type === 'record' || e.type === 'video');
     if (hasMedia) {
@@ -356,6 +485,7 @@ export class Bridge {
       routingHead: {
         c2c: {
           uin: userUin,
+          ...(userUid ? { uid: userUid } : {}),
         },
       } as any,
       contentHead: {
@@ -416,11 +546,11 @@ export class Bridge {
 
   async fetchFriendList(): Promise<FriendInfo[]> { return fetchFriendList_(this); }
   async fetchGroupList(): Promise<QQGroupInfo[]> { return fetchGroupList_(this); }
-  async fetchGroupMemberList(groupId: number): Promise<GroupMemberInfo[]> {
+  async fetchGroupMemberList(groupId: number, options: { force?: boolean } = {}): Promise<GroupMemberInfo[]> {
     const kMemberListTtlMs = 60_000;
     const now = Date.now();
     const last = this.memberListLastFetch_.get(groupId);
-    if (last && now - last.at < kMemberListTtlMs) {
+    if (!options.force && last && now - last.at < kMemberListTtlMs) {
       return last.data;
     }
     const inflight = this.memberListInflight_.get(groupId);
@@ -445,7 +575,10 @@ export class Bridge {
 
   async muteGroupMember(groupId: number, userId: number, duration: number): Promise<void> { return muteGroupMember_(this, groupId, userId, duration); }
   async muteGroupAll(groupId: number, enable: boolean): Promise<void> { return muteGroupAll_(this, groupId, enable); }
+  async setGroupAddOption(groupId: number, addType: number): Promise<void> { return setGroupAddOption_(this, groupId, addType); }
+  async setGroupSearch(groupId: number): Promise<void> { return setGroupSearch_(this, groupId); }
   async kickGroupMember(groupId: number, userId: number, reject: boolean, reason = ''): Promise<void> { return kickGroupMember_(this, groupId, userId, reject, reason); }
+  async kickGroupMembers(groupId: number, userIds: number[], reject: boolean): Promise<void> { return kickGroupMembers_(this, groupId, userIds, reject); }
   async leaveGroup(groupId: number): Promise<void> { return leaveGroup_(this, groupId); }
   async setGroupAdmin(groupId: number, userId: number, enable: boolean): Promise<void> { return setGroupAdmin_(this, groupId, userId, enable); }
   async setGroupCard(groupId: number, userId: number, card: string): Promise<void> { return setGroupCard_(this, groupId, userId, card); }
@@ -483,6 +616,7 @@ export class Bridge {
   async markGroupMsgAsRead(groupId: number, sequence: number): Promise<void> { return markGroupMsgAsRead_(this, groupId, sequence); }
   async markPrivateMsgAsRead(userId: number, sequence: number): Promise<void> { return markPrivateMsgAsRead_(this, userId, sequence); }
   async setFriendRemark(userId: number, remark: string): Promise<void> { return setFriendRemark_(this, userId, remark); }
+  async setGroupRemark(groupId: number, remark: string): Promise<void> { return setGroupRemark_(this, groupId, remark); }
   async getGroupHonorInfo(groupId: number, type: WebHonorType | string): Promise<any> {
     return getGroupHonorInfo_(this, groupId, type);
   }
@@ -549,6 +683,12 @@ export class Bridge {
   async setAvatar(source: string): Promise<void> {
     return setAvatar_(this, source);
   }
+  async fetchCustomFace(count?: number): Promise<string[]> {
+    return fetchCustomFace_(this, count);
+  }
+  async getEmojiLikes(groupId: number, sequence: number, emojiId: string, emojiType?: number, count?: number, cookie?: string) {
+    return getEmojiLikes_(this, groupId, sequence, emojiId, emojiType, count, cookie);
+  }
 }
 
 // --- Module-level helper functions ---
@@ -575,6 +715,11 @@ function elementsToText(elements: MessageElement[]): string {
   }).join('');
 }
 
+function formatEventUser(uin: number, uid?: string): string {
+  if (uin > 0) return String(uin);
+  return uid || '未知用户';
+}
+
 function printEvent(event: QQEventVariant): void {
   switch (event.kind) {
     case 'group_message':
@@ -589,10 +734,10 @@ function printEvent(event: QQEventVariant): void {
       eventLog.warn('私聊撤回 %d 撤回了消息', event.userUin);
       break;
     case 'group_member_join':
-      eventLog.info('入群 %d 加入 %d', event.userUin, event.groupId);
+      eventLog.info('入群 %s 加入 %d', formatEventUser(event.userUin, event.userUid), event.groupId);
       break;
     case 'group_member_leave':
-      eventLog.warn('退群 %d %s %d', event.userUin, event.isKick ? '被踢出' : '退出', event.groupId);
+      eventLog.warn('退群 %s %s %d', formatEventUser(event.userUin, event.userUid), event.isKick ? '被踢出' : '退出', event.groupId);
       break;
     case 'group_mute':
       eventLog.warn('禁言 %d | %d %d秒', event.groupId, event.userUin, event.duration);

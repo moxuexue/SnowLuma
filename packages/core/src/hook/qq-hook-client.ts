@@ -9,6 +9,7 @@ export const PIPE_VERSION = 1;
 export const HEADER_SIZE = 40;
 export const DEFAULT_ACK_TIMEOUT_MS = 5000;
 export const DEFAULT_REPLY_TIMEOUT_MS = 30000;
+const DEFAULT_PIPE_PROBE_TIMEOUT_MS = 250;
 
 export enum PipeOp {
   hello = 1,
@@ -100,6 +101,63 @@ function mojoPipeName(pid: number, suffix: string): string {
     return `\\\\.\\pipe\\mojo.${pid}.${suffix}`;
   }
   return path.join(linuxRuntimeDir(), `mojo.${pid}.${suffix}.sock`);
+}
+
+type LinuxPipeProbe = (socketPath: string) => Promise<boolean>;
+
+async function isConnectableUnixSocket(socketPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(socketPath);
+    if (!stat.isSocket()) return false;
+  } catch {
+    return false;
+  }
+
+  return new Promise<boolean>((resolve) => {
+    let socket: net.Socket;
+    try {
+      socket = net.createConnection(socketPath);
+    } catch {
+      resolve(false);
+      return;
+    }
+    let done = false;
+    let timer: NodeJS.Timeout;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(ok);
+    };
+    timer = setTimeout(() => finish(false), DEFAULT_PIPE_PROBE_TIMEOUT_MS);
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
+export async function listLiveLinuxPipePids(
+  runtimeDir = linuxRuntimeDir(),
+  probe: LinuxPipeProbe = isConnectableUnixSocket,
+): Promise<Set<number>> {
+  const result = new Set<number>();
+  let names: string[];
+  try {
+    names = await fs.readdir(runtimeDir);
+  } catch {
+    return result;
+  }
+
+  await Promise.all(names.map(async (name) => {
+    const m = /^mojo\.(\d+)\.control\.sock$/.exec(name);
+    if (!m) return;
+    const pid = Number(m[1]);
+    if (!Number.isInteger(pid) || pid <= 0) return;
+    if (await probe(path.join(runtimeDir, name))) result.add(pid);
+  }));
+
+  return result;
 }
 
 function toBuffer(body: Buffer | Uint8Array | string | null | undefined): Buffer {
@@ -312,11 +370,7 @@ export class QqHookClient extends EventEmitter {
           if (m) result.add(Number(m[1]));
         }
       } else {
-        const names = await fs.readdir(linuxRuntimeDir());
-        for (const name of names) {
-          const m = /^mojo\.(\d+)\.control\.sock$/.exec(name);
-          if (m) result.add(Number(m[1]));
-        }
+        return await listLiveLinuxPipePids();
       }
     } catch {
       /* directory missing or inaccessible — treat as no live pipes */

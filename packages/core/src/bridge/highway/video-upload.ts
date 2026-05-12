@@ -26,6 +26,7 @@ import {
   loadBinarySource,
   computeHashes,
   detectImageFormat,
+  resolveLocalFilePath,
 } from './utils';
 import {
   fetchHighwaySession,
@@ -212,18 +213,6 @@ function computeVideoSha1Blocks(bytes: Uint8Array): Uint8Array[] {
   return blocks;
 }
 
-function asLocalFilePath(source: string): string | null {
-  if (!source) return null;
-  if (source.startsWith('base64://')) return null;
-  if (source.startsWith('http://') || source.startsWith('https://')) return null;
-
-  let filePath = source;
-  if (filePath.startsWith('file://')) filePath = filePath.slice(7);
-  if (/^\/[a-zA-Z]:/.test(filePath)) filePath = filePath.slice(1);
-
-  return filePath;
-}
-
 function defaultVideoTempDir(): string {
   return path.join(os.tmpdir(), 'snowluma-video');
 }
@@ -232,7 +221,7 @@ function sourceExtension(fileName: string, source: string): string {
   const fromName = path.extname(fileName);
   if (fromName) return fromName;
 
-  const local = asLocalFilePath(source);
+  const local = resolveLocalFilePath(source);
   const fromSource = local ? path.extname(local) : '';
   return fromSource || '.mp4';
 }
@@ -250,7 +239,7 @@ async function stageVideoSource(element: MessageElement, tempDir: string, cleanu
   const source = element.url || element.fileId || '';
   if (!source) throw new Error('video source is empty');
 
-  const local = asLocalFilePath(source);
+  const local = resolveLocalFilePath(source);
   if (local && fs.existsSync(local)) {
     return {
       bytes: new Uint8Array(fs.readFileSync(local)),

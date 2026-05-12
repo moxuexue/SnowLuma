@@ -72,8 +72,11 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
     getStrangerInfo: (userId) => handleGetStrangerInfo(bridge, qqInfo, userId),
     // Group admin
     setGroupKick: (groupId, userId, reject) => bridge.kickGroupMember(groupId, userId, reject),
+    setGroupKickMembers: (groupId, userIds, reject) => bridge.kickGroupMembers(groupId, userIds, reject),
     setGroupBan: (groupId, userId, duration) => bridge.muteGroupMember(groupId, userId, duration),
     setGroupWholeBan: (groupId, enable) => bridge.muteGroupAll(groupId, enable),
+    setGroupAddOption: (groupId, addType) => bridge.setGroupAddOption(groupId, addType),
+    setGroupSearch: (groupId) => bridge.setGroupSearch(groupId),
     setGroupAdmin: (groupId, userId, enable) => bridge.setGroupAdmin(groupId, userId, enable),
     setGroupCard: (groupId, userId, card) => bridge.setGroupCard(groupId, userId, card),
     setGroupName: (groupId, name) => bridge.setGroupName(groupId, name),
@@ -107,6 +110,8 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
     setEssenceMsg: (messageId) => handleSetEssence(bridge, messageStore, messageId, true),
     deleteEssenceMsg: (messageId) => handleSetEssence(bridge, messageStore, messageId, false),
     getProfileLike: (userId?: number, start: number = 0, limit: number = 10) => bridge.getProfileLike(userId, start, limit),
+    fetchCustomFace: (count?: number) => bridge.fetchCustomFace(count),
+    getEmojiLikes: (groupId, sequence, emojiId, emojiType, count, cookie) => bridge.getEmojiLikes(groupId, sequence, emojiId, emojiType, count, cookie),
     getUnidirectionalFriendList: () => bridge.getUnidirectionalFriendList(),
     setSelfLongNick: (longNick) => bridge.setSelfLongNick(longNick),
     setInputStatus: (userId, eventType) => bridge.setInputStatus(userId, eventType),
@@ -154,6 +159,7 @@ export function buildApiContext(ref: OneBotInstanceContext): ApiActionContext {
 
     // Extended NapCat-compatible
     setFriendRemark: (userId, remark) => bridge.setFriendRemark(userId, remark),
+    setGroupRemark: (groupId, remark) => bridge.setGroupRemark(groupId, remark),
     getGroupFileCount: (groupId) => bridge.fetchGroupFileCount(groupId),
     setMsgEmojiLike: async (messageId, emojiId, set) => {
       const meta = messageStore.findMeta(messageId);

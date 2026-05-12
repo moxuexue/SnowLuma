@@ -21,7 +21,7 @@ import {
   NTV2UploadRichMediaRespSchema,
   EncodableMediaMsgInfoSchema,
 } from '../proto/highway';
-import { loadBinarySource, computeHashes } from './utils';
+import { loadBinarySource, computeHashes, resolveLocalFilePath } from './utils';
 import {
   fetchHighwaySession,
   uploadHighwayHttp,
@@ -49,23 +49,6 @@ interface PttPayload {
   cleanups: Array<() => void>;
 }
 
-/**
- * Decide whether `source` looks like a local filesystem path. The shape
- * matches the heuristics used inside `loadBinarySource`: we only reuse the
- * caller-supplied path verbatim for things the addon can read directly.
- */
-function asLocalFilePath(source: string): string | null {
-  if (!source) return null;
-  if (source.startsWith('base64://')) return null;
-  if (source.startsWith('http://') || source.startsWith('https://')) return null;
-
-  let filePath = source;
-  if (filePath.startsWith('file://')) filePath = filePath.slice(7);
-  if (/^\/[a-zA-Z]:/.test(filePath)) filePath = filePath.slice(1);
-
-  return filePath;
-}
-
 async function loadPtt(element: MessageElement, tempDir: string): Promise<PttPayload> {
   const source = element.url || element.fileId || '';
   if (!source) throw new Error('record source is empty');
@@ -87,7 +70,7 @@ async function loadPtt(element: MessageElement, tempDir: string): Promise<PttPay
     // Resolve the on-disk path the addon should read. Anything that isn't
     // already a local file (base64, HTTP) gets staged into the temp dir.
     let inputPath: string;
-    const local = asLocalFilePath(source);
+    const local = resolveLocalFilePath(source);
     if (local && fs.existsSync(local)) {
       inputPath = local;
     } else {

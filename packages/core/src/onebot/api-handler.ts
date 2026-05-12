@@ -48,8 +48,11 @@ export interface ApiActionContext {
   getStrangerInfo?: (userId: number) => Promise<JsonObject | null>;
   // Group admin
   setGroupKick?: (groupId: number, userId: number, rejectAdd: boolean) => Promise<void>;
+  setGroupKickMembers?: (groupId: number, userIds: number[], rejectAdd: boolean) => Promise<void>;
   setGroupBan?: (groupId: number, userId: number, duration: number) => Promise<void>;
   setGroupWholeBan?: (groupId: number, enable: boolean) => Promise<void>;
+  setGroupAddOption?: (groupId: number, addType: number) => Promise<void>;
+  setGroupSearch?: (groupId: number) => Promise<void>;
   setGroupAdmin?: (groupId: number, userId: number, enable: boolean) => Promise<void>;
   setGroupCard?: (groupId: number, userId: number, card: string) => Promise<void>;
   setGroupName?: (groupId: number, name: string) => Promise<void>;
@@ -100,11 +103,14 @@ export interface ApiActionContext {
   getForwardMsg?: (resId: string) => Promise<JsonObject[]>;
   // Extended NapCat-compatible
   setFriendRemark?: (userId: number, remark: string) => Promise<void>;
+  setGroupRemark?: (groupId: number, remark: string) => Promise<void>;
   getGroupFileCount?: (groupId: number) => Promise<{ fileCount: number; maxCount: number }>;
   setMsgEmojiLike?: (messageId: number, emojiId: string, set: boolean) => Promise<void>;
   markGroupMsgAsRead?: (groupId: number, sequence: number) => Promise<void>;
   markPrivateMsgAsRead?: (userId: number, sequence: number) => Promise<void>;
   getProfileLike?: (userId?: number, start?: number, limit?: number) => Promise<any>;
+  fetchCustomFace?: (count?: number) => Promise<string[]>;
+  getEmojiLikes?: (groupId: number, sequence: number, emojiId: string, emojiType?: number, count?: number, cookie?: string) => Promise<{ users: Array<{ uin: number }>, cookie: string, isLast: boolean }>;
   // Web
   getGroupHonorInfo?: (groupId: number, type: WebHonorType | string) => Promise<any>;
   getGroupEssence?: (groupId: number, pageStart?: number, pageLimit?: number) => Promise<GroupEssenceMsgRet>;

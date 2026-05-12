@@ -74,15 +74,15 @@ export async function sendOidbAndDecode<T>(
 export async function resolveUserUid(bridge: Bridge, uin: number, groupId?: number): Promise<string> {
   // Try group member first
   if (groupId !== undefined) {
-    const uid = bridge.qqInfo.findUidByUinInGroup(groupId, uin);
+    const uid = bridge.identity.findUidByUin(uin, groupId);
     if (uid) return uid;
     // Try fetching member list
     try { await bridge.fetchGroupMemberList(groupId); } catch { /* ignore */ }
-    const uid2 = bridge.qqInfo.findUidByUinInGroup(groupId, uin);
+    const uid2 = bridge.identity.findUidByUin(uin, groupId);
     if (uid2) return uid2;
   }
   // Try cached
-  const uid = bridge.qqInfo.findUidByUin(uin);
+  const uid = bridge.identity.findUidByUin(uin);
   if (uid) return uid;
   // Fetch profile
   const profile = await bridge.fetchUserProfile(uin);

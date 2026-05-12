@@ -4,6 +4,7 @@
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 export interface LoadedBinary {
   bytes: Uint8Array;
@@ -25,14 +26,42 @@ export interface ImageFormat {
 
 // --- Binary source loading ---
 
+export function resolveLocalFilePath(source: string): string | null {
+  if (!source) return null;
+  if (/^base64:\/\//i.test(source)) return null;
+  if (/^https?:\/\//i.test(source)) return null;
+
+  let filePath = source;
+  if (/^file:\/\//i.test(source)) {
+    try {
+      filePath = fileURLToPath(source);
+    } catch {
+      filePath = source.replace(/^file:\/+/i, '/');
+      try {
+        filePath = decodeURIComponent(filePath);
+      } catch {
+        // Keep the original fallback path when percent decoding fails.
+      }
+    }
+
+    if (process.platform !== 'win32' && filePath.startsWith('//')) {
+      filePath = filePath.replace(/^\/+/, '/');
+    }
+  }
+
+  // Windows-style paths can arrive from file:///C:/... as /C:/...
+  if (/^\/[a-zA-Z]:/.test(filePath)) filePath = filePath.slice(1);
+  return filePath;
+}
+
 export async function loadBinarySource(source: string, resourceName: string): Promise<LoadedBinary> {
   if (!source) throw new Error(`${resourceName} source is empty`);
 
-  if (source.startsWith('base64://')) {
+  if (/^base64:\/\//i.test(source)) {
     return { bytes: Buffer.from(source.slice(9), 'base64'), fileName: '' };
   }
 
-  if (source.startsWith('http://') || source.startsWith('https://')) {
+  if (/^https?:\/\//i.test(source)) {
     const resp = await fetch(source);
     if (!resp.ok) throw new Error(`HTTP download failed: ${resp.status}`);
     const bytes = new Uint8Array(await resp.arrayBuffer());
@@ -40,11 +69,8 @@ export async function loadBinarySource(source: string, resourceName: string): Pr
     return { bytes, fileName };
   }
 
-  // File path (strip file:// prefix)
-  let filePath = source;
-  if (filePath.startsWith('file://')) filePath = filePath.slice(7);
-  // Windows: strip leading / before drive letter
-  if (/^\/[a-zA-Z]:/.test(filePath)) filePath = filePath.slice(1);
+  const filePath = resolveLocalFilePath(source);
+  if (!filePath) throw new Error(`${resourceName} source is not a local file`);
 
   const bytes = fs.readFileSync(filePath);
   const fileName = path.basename(filePath);

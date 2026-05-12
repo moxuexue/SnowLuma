@@ -91,7 +91,7 @@ export async function fetchFriendList(bridge: Bridge): Promise<FriendInfo[]> {
     if (nextUin === 0) nextUin = null;
   } while (nextUin !== null);
 
-  bridge.qqInfo.setFriends(friends);
+  bridge.identity.rememberFriends(friends);
   return friends;
 }
 
@@ -138,7 +138,7 @@ export async function fetchGroupList(bridge: Bridge): Promise<QQGroupInfo[]> {
       });
     }
   }
-  bridge.qqInfo.setGroups(groups);
+  bridge.identity.rememberGroups(groups);
   return groups;
 }
 
@@ -189,7 +189,7 @@ export async function fetchGroupMemberList(bridge: Bridge, groupId: number): Pro
     token = resp?.token ?? '';
   } while (token);
 
-  bridge.qqInfo.setGroupMembers(groupId, members);
+  bridge.identity.rememberGroupMembers(groupId, members);
   return members;
 }
 
@@ -248,9 +248,7 @@ export async function fetchUserProfile(bridge: Bridge, uin: number): Promise<Use
     info.age = numMap.get(20037) ?? 0;
   }
 
-  bridge.qqInfo.setUserProfile(info);
-  const selfUin = parseInt(bridge.qqInfo.uin, 10) || 0;
-  if (info.uin === selfUin) bridge.qqInfo.setSelfProfile(info);
+  bridge.identity.rememberUserProfile(info);
   return info;
 }
 
@@ -286,6 +284,7 @@ export async function fetchGroupRequests(bridge: Bridge, filtered = false): Prom
       filtered,
     });
   }
+  bridge.identity.rememberGroupRequests(requests);
   return requests;
 }
 

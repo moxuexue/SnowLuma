@@ -108,6 +108,14 @@ describe('parseMessage', () => {
       expect(result).toEqual([{ type: 'video', url: '/tmp/clip.mp4', thumbUrl: '/tmp/clip.png' }]);
     });
 
+    it('parses AstrBot-style Video segment with top-level media', async () => {
+      const result = await parseMessage(
+        [{ type: 'Video', media: 'file:////AstrBot/data/cache/BV-test.mp4' }] as any,
+        false,
+      );
+      expect(result).toEqual([{ type: 'video', url: 'file:////AstrBot/data/cache/BV-test.mp4', thumbUrl: undefined }]);
+    });
+
     it('drops video segment with empty source', async () => {
       const result = await parseMessage(
         [{ type: 'video', data: {} }] as any,

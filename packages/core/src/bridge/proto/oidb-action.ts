@@ -28,6 +28,26 @@ export const OidbMuteAllSchema = {
   muteState: { field: 2, type: 'message' as const, schema: OidbMuteAllStateSchema },
 } satisfies ProtoSchema;
 
+// --- 0x89A_0: Set group add option ---
+
+export const Oidb0x89a_0AddOptionSettingsSchema = {
+  addType: { field: 16, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x89a_0AddOptionSchema = {
+  groupUin:  { field: 1, type: 'uint64' as const },
+  settings:  { field: 2, type: 'message' as const, schema: Oidb0x89a_0AddOptionSettingsSchema },
+  field12:   { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+// --- 0x89A_0: Set group search ---
+
+export const Oidb0x89a_0SearchSchema = {
+  groupUin: { field: 1, type: 'uint64' as const },
+  settings: { field: 2, type: 'bytes' as const },
+  field12:  { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
 // --- 0x8A0_1: Kick group member ---
 
 export const OidbKickMemberSchema = {
@@ -1019,3 +1039,85 @@ export const Oidb0xeb7ReqSchema = {
 } satisfies ProtoSchema;
 
 export const Oidb0xeb7RespSchema = {} satisfies ProtoSchema;
+
+// --- Faceroam.OpReq: Fetch custom face ---
+
+export const FaceroamOpReqInnerSchema = {
+  field1:    { field: 1, type: 'uint32' as const },
+  osVersion: { field: 2, type: 'string' as const },
+  qqVersion: { field: 3, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const FaceroamOpReqSchema = {
+  inner:  { field: 1, type: 'message' as const, schema: FaceroamOpReqInnerSchema },
+  uin:    { field: 2, type: 'uint64' as const },
+  field3: { field: 3, type: 'uint32' as const },
+  field6: { field: 6, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const FaceroamOpRespItemSchema = {
+  faceIds:    { field: 1, type: 'repeated_string' as const },
+  category:   { field: 3, type: 'string' as const },
+  totalCount: { field: 4, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const FaceroamOpRespSchema = {
+  retCode: { field: 1, type: 'uint32' as const },
+  message: { field: 2, type: 'string' as const },
+  field3:  { field: 3, type: 'uint32' as const },
+  item:    { field: 4, type: 'message' as const, schema: FaceroamOpRespItemSchema },
+} satisfies ProtoSchema;
+
+// --- 0x9083_1: Get emoji likes ---
+
+export const Oidb0x9083ReqSchema = {
+  groupId:   { field: 2, type: 'uint64' as const },
+  sequence:  { field: 3, type: 'uint32' as const },
+  emojiType: { field: 4, type: 'uint32' as const },
+  emojiId:   { field: 5, type: 'string' as const },
+  cookie:    { field: 6, type: 'bytes' as const },
+  field7:    { field: 7, type: 'uint32' as const },
+  count:     { field: 8, type: 'uint32' as const },
+  field12:   { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x9083RespUserInfoSchema = {
+  uin:    { field: 1, type: 'uint64' as const },
+  field3: { field: 3, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x9083RespInnerSchema = {
+  userInfo: { field: 1, type: 'message' as const, schema: Oidb0x9083RespUserInfoSchema },
+  field4:   { field: 4, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x9083RespSchema = {
+  inner:  { field: 4, type: 'message' as const, schema: Oidb0x9083RespInnerSchema },
+  cookie: { field: 5, type: 'bytes' as const },
+} satisfies ProtoSchema;
+
+// --- 0x8a0_1: Kick group members (batch) ---
+
+export const Oidb0x8a0ReqSchema = {
+  groupId:          { field: 1, type: 'uint64' as const },
+  targetUids:       { field: 3, type: 'repeated_string' as const },
+  rejectAddRequest: { field: 4, type: 'uint32' as const },
+  kickReason:       { field: 5, type: 'bytes' as const },
+  field12:          { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0x8a0RespSchema = {} satisfies ProtoSchema;
+
+// --- 0xf16_1: Set group remark ---
+
+export const Oidb0xf16InnerSchema = {
+  groupId: { field: 1, type: 'uint64' as const },
+  remark:  { field: 3, type: 'string' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xf16ReqSchema = {
+  inner:   { field: 1, type: 'message' as const, schema: Oidb0xf16InnerSchema },
+  field12: { field: 12, type: 'uint32' as const },
+} satisfies ProtoSchema;
+
+export const Oidb0xf16RespSchema = {} satisfies ProtoSchema;

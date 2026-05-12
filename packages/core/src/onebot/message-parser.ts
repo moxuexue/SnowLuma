@@ -14,7 +14,7 @@ export interface ParseMessageOptions {
 
 // --- CQ Code parsing ---
 
-const CQ_REGEX = /\[CQ:([a-z]+)(?:,([^\]]*))?\]/g;
+const CQ_REGEX = /\[CQ:([A-Za-z]+)(?:,([^\]]*))?\]/g;
 
 function parseCQParams(raw: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -71,6 +71,7 @@ async function parseFromCQString(message: string, options?: ParseMessageOptions)
 interface MessageSegment {
   type: string;
   data?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 function isSegmentArray(val: unknown): val is MessageSegment[] {
@@ -80,7 +81,8 @@ function isSegmentArray(val: unknown): val is MessageSegment[] {
 }
 
 async function segmentToElement(type: string, data: Record<string, unknown>, options?: ParseMessageOptions): Promise<MessageElement | null> {
-  switch (type) {
+  const normalizedType = type.toLowerCase();
+  switch (normalizedType) {
     case 'text': {
       const text = String(data.text ?? '');
       return text ? { type: 'text', text } : null;
@@ -143,14 +145,14 @@ async function segmentToElement(type: string, data: Record<string, unknown>, opt
     case 'image': {
       return {
         type: 'image',
-        url: String(data.file ?? data.url ?? ''),
+        url: String(data.file ?? data.url ?? data.path ?? data.media ?? ''),
         flash: data.type === 'flash',
         subType: parseInt(String(data.subType ?? '0'), 10),
         summary: data.summary ? String(data.summary) : undefined,
       };
     }
     case 'record': {
-      const source = String(data.file ?? data.url ?? data.path ?? '');
+      const source = String(data.file ?? data.url ?? data.path ?? data.media ?? '');
       if (!source) return null;
       return {
         type: 'record',
@@ -158,7 +160,7 @@ async function segmentToElement(type: string, data: Record<string, unknown>, opt
       };
     }
     case 'video': {
-      const source = String(data.file ?? data.url ?? data.path ?? '');
+      const source = String(data.file ?? data.url ?? data.path ?? data.media ?? '');
       if (!source) return null;
       return {
         type: 'video',
@@ -320,6 +322,16 @@ async function segmentToElement(type: string, data: Record<string, unknown>, opt
   }
 }
 
+function segmentPayload(seg: MessageSegment): Record<string, unknown> {
+  const topLevel = { ...seg } as Record<string, unknown>;
+  delete topLevel.type;
+  delete topLevel.data;
+  const nested = (seg.data && typeof seg.data === 'object' && !Array.isArray(seg.data))
+    ? seg.data
+    : {};
+  return { ...topLevel, ...nested };
+}
+
 // --- Public API ---
 
 /**
@@ -341,7 +353,7 @@ export async function parseMessage(message: JsonValue, autoEscape: boolean, opti
   if (isSegmentArray(message)) {
     const elements: MessageElement[] = [];
     for (const seg of message) {
-      const data = (seg.data ?? {}) as Record<string, unknown>;
+      const data = segmentPayload(seg);
       const elem = await segmentToElement(seg.type, data, options);
       if (elem) elements.push(elem);
     }
@@ -352,7 +364,7 @@ export async function parseMessage(message: JsonValue, autoEscape: boolean, opti
   if (typeof message === 'object' && message !== null && !Array.isArray(message)) {
     const seg = message as unknown as MessageSegment;
     if (seg.type) {
-      const data = (seg.data ?? {}) as Record<string, unknown>;
+      const data = segmentPayload(seg);
       const elem = await segmentToElement(seg.type, data, options);
       return elem ? [elem] : [];
     }

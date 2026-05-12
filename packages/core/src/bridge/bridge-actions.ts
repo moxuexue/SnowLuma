@@ -9,10 +9,13 @@ import { computeHashes, computeMd5, loadBinarySource } from './highway/utils';
 import { buildSendElems } from './builders/element-builder';
 import { parseMsgPush } from './handlers/msg-push-handler';
 import type { ForwardNodePayload, MessageElement } from './events';
+import { createLogger } from '../utils/logger';
 import { PushMsgSchema } from './proto/message';
 import {
   OidbMuteMemberSchema,
   OidbMuteAllSchema,
+  Oidb0x89a_0AddOptionSchema,
+  Oidb0x89a_0SearchSchema,
   OidbKickMemberSchema,
   OidbLeaveGroupSchema,
   OidbFriendRequestActionSchema,
@@ -49,6 +52,10 @@ import {
   OidbSetProfileSchema,
   Oidb0x7edReqSchema,
   Oidb0x7edRespSchema,
+  Oidb0x8a0ReqSchema,
+  Oidb0x8a0RespSchema,
+  Oidb0xf16ReqSchema,
+  Oidb0xf16RespSchema,
   Oidb0x8a7RespSchema,
   Oidb0x8a7ReqSchema,
   Oidb0xe17RespSchema,
@@ -65,6 +72,10 @@ import {
   Oidb0x112eRespSchema,
   Oidb0xeb7ReqSchema,
   Oidb0xeb7RespSchema,
+  FaceroamOpReqSchema,
+  FaceroamOpRespSchema,
+  Oidb0x9083ReqSchema,
+  Oidb0x9083RespSchema,
 } from './proto/oidb-action';
 import { FileUploadExtSchema } from './proto/highway';
 import {
@@ -75,6 +86,8 @@ import {
   SendLongMsgRespSchema,
 } from './proto/longmsg';
 import { gzipSync, gunzipSync } from 'zlib';
+
+const log = createLogger('BridgeActions');
 
 export interface GroupFileInfo {
   fileId: string;
@@ -407,6 +420,11 @@ export async function setFriendRemark(bridge: Bridge, userId: number, remark: st
     { targetUid: uid, remark }, OidbSetFriendRemarkSchema);
 }
 
+export async function setGroupRemark(bridge: Bridge, groupId: number, remark: string): Promise<void> {
+  await sendOidbAndCheck(bridge, 'OidbSvcTrpcTcp.0xf16_1', 0xF16, 1,
+    { inner: { groupId: BigInt(groupId), remark }, field12: 0 }, Oidb0xf16ReqSchema);
+}
+
 // ---------------------------------------------------------------------------
 // Group file count
 // ---------------------------------------------------------------------------
@@ -438,10 +456,26 @@ export async function muteGroupAll(bridge: Bridge, groupId: number, enable: bool
     { groupUin: groupId, muteState: { state: enable ? 0xFFFFFFFF : 0 } }, OidbMuteAllSchema);
 }
 
+export async function setGroupAddOption(bridge: Bridge, groupId: number, addType: number): Promise<void> {
+  await sendOidbAndCheck(bridge, 'OidbSvcTrpcTcp.0x89a_0', 0x89A, 0,
+    { groupUin: BigInt(groupId), settings: { addType }, field12: 0 }, Oidb0x89a_0AddOptionSchema);
+}
+
+export async function setGroupSearch(bridge: Bridge, groupId: number): Promise<void> {
+  await sendOidbAndCheck(bridge, 'OidbSvcTrpcTcp.0x89a_0', 0x89A, 0,
+    { groupUin: BigInt(groupId), settings: new Uint8Array(0), field12: 0 }, Oidb0x89a_0SearchSchema);
+}
+
 export async function kickGroupMember(bridge: Bridge, groupId: number, userId: number, reject: boolean, reason = ''): Promise<void> {
   const uid = await resolveUserUid(bridge, userId, groupId);
   await sendOidbAndCheck(bridge, 'OidbSvcTrpcTcp.0x8a0_1', 0x8A0, 1,
     { groupUin: groupId, targetUid: uid, rejectAddRequest: reject, reason }, OidbKickMemberSchema);
+}
+
+export async function kickGroupMembers(bridge: Bridge, groupId: number, userIds: number[], reject: boolean): Promise<void> {
+  const targetUids = await Promise.all(userIds.map(userId => resolveUserUid(bridge, userId, groupId)));
+  await sendOidbAndCheck(bridge, 'OidbSvcTrpcTcp.0x8a0_1', 0x8A0, 1,
+    { groupId: BigInt(groupId), targetUids, rejectAddRequest: reject ? 1 : 0, kickReason: new Uint8Array(0), field12: 0 }, Oidb0x8a0ReqSchema);
 }
 
 export async function leaveGroup(bridge: Bridge, groupId: number): Promise<void> {
@@ -1730,5 +1764,51 @@ export async function setAvatar(
   const hashes = computeHashes(loaded.bytes);
   const session = await fetchHighwaySession(bridge);
   await uploadHighwayHttp(bridge, session, 90, loaded.bytes, hashes.md5, new Uint8Array(0));
+}
+
+export async function fetchCustomFace(bridge: Bridge, count: number = 10): Promise<string[]> {
+  const req = {
+    inner: { field1: 1, osVersion: '10.0.26200', qqVersion: '9.9.28-46928' },
+    uin: BigInt(bridge.qqInfo.uin),
+    field3: 1,
+    field6: 1,
+  };
+  const request = protoEncode(req, FaceroamOpReqSchema);
+  const result = await bridge.sendRawPacket('Faceroam.OpReq', request);
+  if (!result.success || !result.gotResponse || !result.responseData) {
+    throw new Error(result.errorMessage || 'fetch custom face failed');
+  }
+  const resp = protoDecode(result.responseData, FaceroamOpRespSchema);
+  if (!resp || (resp as any).retCode !== 0) {
+    throw new Error(`fetch custom face error: ${(resp as any)?.message || 'unknown'}`);
+  }
+  const faceIds = (resp as any).item?.faceIds || [];
+  return faceIds.slice(0, count).map((id: string) => `https://p.qpic.cn/qq_expression/${bridge.qqInfo.uin}/${id}/0`);
+}
+
+export async function getEmojiLikes(
+  bridge: Bridge,
+  groupId: number,
+  sequence: number,
+  emojiId: string,
+  emojiType: number = 1,
+  count: number = 10,
+  cookie: string = ''
+): Promise<{ users: Array<{ uin: number }>, cookie: string, isLast: boolean }> {
+  const req = {
+    groupId: BigInt(groupId),
+    sequence,
+    emojiType,
+    emojiId,
+    cookie: cookie ? Buffer.from(cookie, 'base64') : new Uint8Array(0),
+    field7: 0,
+    count,
+    field12: 1,
+  };
+  const resp = await sendOidbAndDecode<any>(bridge, 'OidbSvcTrpcTcp.0x9083_1', 0x9083, 1, req, Oidb0x9083ReqSchema, Oidb0x9083RespSchema);
+  const uin = resp?.inner?.userInfo?.uin;
+  const users = uin ? [{ uin: Number(uin) }] : [];
+  const respCookie = resp?.cookie ? Buffer.from(resp.cookie).toString('base64') : '';
+  return { users, cookie: respCookie, isLast: !respCookie };
 }
 

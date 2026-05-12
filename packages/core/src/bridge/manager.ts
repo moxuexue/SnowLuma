@@ -5,6 +5,7 @@
 import type { NtqqHandler } from '../protocol/ntqq-handler';
 import type { PacketInfo } from '../protocol/types';
 import { Bridge } from './bridge';
+import { IdentityService } from './identity-service';
 import { QQInfo } from './qq-info';
 import type { PacketSender } from '../protocol/packet-sender';
 import { createLogger } from '../utils/logger';
@@ -48,6 +49,7 @@ export class BridgeManager {
       this.sessions_.delete(uin);
       log.debug('session closed: UIN=%s', uin);
       if (this.onSessionClosed_) this.onSessionClosed_(uin);
+      session.bridge.dispose();
     }
   }
 
@@ -107,7 +109,7 @@ export class BridgeManager {
     if (session) return { session, created: false };
 
     const qqInfo = new QQInfo(uin);
-    const bridge = new Bridge(qqInfo);
+    const bridge = new Bridge(qqInfo, IdentityService.openForUin(qqInfo));
     session = { qqInfo, bridge };
     this.sessions_.set(uin, session);
 
