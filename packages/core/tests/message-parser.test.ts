@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, it, expect, vi } from 'vitest';
 import { parseMessage } from '../src/onebot/message-parser';
-import { buildSendElems } from '../src/bridge/builders/element-builder';
+import { buildSendElems } from '../src/bridge/element-builder';
 import { MentionExtraSendSchema } from '../src/bridge/proto/action';
 import { makeOidbBaseSchema } from '../src/bridge/proto/oidb';
 import { NTV2UploadRichMediaRespSchema } from '../src/bridge/proto/highway';

@@ -2,20 +2,20 @@
 // for encoding with protoEncode(SendMessageRequestSchema).
 // Port of src/bridge/src/bridge_messages.cpp build_send_elems()
 
-import type { Bridge } from '../bridge';
-import type { MessageElement } from '../events';
-import type { ProtoDecoded } from '../../protobuf/decode';
-import { protoEncode } from '../../protobuf/decode';
+import type { Bridge } from './bridge';
+import type { MessageElement } from './events';
+import type { ProtoDecoded } from '../protobuf/decode';
+import { protoEncode } from '../protobuf/decode';
 import {
   ElemSchema,
-} from '../proto/element';
+} from './proto/element';
 import {
   MentionExtraSendSchema,
   MarkdownDataSchema,
-} from '../proto/action';
-import { uploadImageMsgInfo } from '../highway/image-upload';
-import { uploadPttMsgInfo } from '../highway/ptt-upload';
-import { uploadVideoMsgInfo } from '../highway/video-upload';
+} from './proto/action';
+import { uploadImageMsgInfo } from './highway/image-upload';
+import { uploadPttMsgInfo } from './highway/ptt-upload';
+import { uploadVideoMsgInfo } from './highway/video-upload';
 
 type ProtoElem = Partial<ProtoDecoded<typeof ElemSchema>>;
 

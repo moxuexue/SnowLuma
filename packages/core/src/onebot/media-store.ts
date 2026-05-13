@@ -38,6 +38,13 @@ export interface CachedImage {
   sessionId: number;
   /** Original imageUrl from the MessageElement, used for RKey re-appending. */
   imageUrl: string;
+  /** Fingerprints used for md5/sha1 fast-upload on forward. Optional because
+   *  legacy CustomFace / NotOnlineImage only carry md5. */
+  md5Hex?: string;
+  sha1Hex?: string;
+  width?: number;
+  height?: number;
+  picFormat?: number;
 }
 
 export interface CachedRecord {
@@ -56,10 +63,34 @@ export interface CachedRecord {
   /** Conversation the media originated from (group vs private path). */
   isGroup: boolean;
   sessionId: number;
+  /** Fingerprints used for md5/sha1 fast-upload on forward. */
+  md5Hex?: string;
+  sha1Hex?: string;
+  voiceFormat?: number;
+}
+
+export interface CachedVideo {
+  file: string;
+  fileId: string;
+  url: string;
+  fileSize: number;
+  fileName: string;
+  duration: number;
+  fileHash: string;
+  mediaNode?: MessageElement['mediaNode'];
+  isGroup: boolean;
+  sessionId: number;
+  /** Fingerprints used for md5/sha1 fast-upload on forward. */
+  md5Hex?: string;
+  sha1Hex?: string;
+  width?: number;
+  height?: number;
+  videoFormat?: number;
 }
 
 const TYPE_IMAGE = 'image';
 const TYPE_RECORD = 'record';
+const TYPE_VIDEO = 'video';
 const DEFAULT_KEEP_ENTRIES = 4096;
 
 export class MediaStore {
@@ -145,12 +176,22 @@ export class MediaStore {
     this.upsertWithAliases(TYPE_RECORD, primaryKey, info, [info.file, info.fileName, info.fileId, info.url]);
   }
 
+  rememberVideo(info: CachedVideo): void {
+    const primaryKey = pickPrimary([info.file, info.fileName, info.fileId]);
+    if (!primaryKey) return;
+    this.upsertWithAliases(TYPE_VIDEO, primaryKey, info, [info.file, info.fileName, info.fileId, info.url]);
+  }
+
   findImage(key: string): CachedImage | null {
     return this.findByAnyKey<CachedImage>(TYPE_IMAGE, key);
   }
 
   findRecord(key: string): CachedRecord | null {
     return this.findByAnyKey<CachedRecord>(TYPE_RECORD, key);
+  }
+
+  findVideo(key: string): CachedVideo | null {
+    return this.findByAnyKey<CachedVideo>(TYPE_VIDEO, key);
   }
 
   updateImageUrl(key: string, url: string): void {
@@ -167,11 +208,19 @@ export class MediaStore {
     this.rememberRecord({ ...cached, url });
   }
 
+  updateVideoUrl(key: string, url: string): void {
+    if (!url) return;
+    const cached = this.findVideo(key);
+    if (!cached || cached.url === url) return;
+    this.rememberVideo({ ...cached, url });
+  }
+
   /** Snapshot count of distinct entries per type; mostly used by tests. */
-  size(): { images: number; records: number } {
+  size(): { images: number; records: number; videos: number } {
     const img = this.countByType.get(TYPE_IMAGE) as { n: number } | undefined;
     const rec = this.countByType.get(TYPE_RECORD) as { n: number } | undefined;
-    return { images: img?.n ?? 0, records: rec?.n ?? 0 };
+    const vid = this.countByType.get(TYPE_VIDEO) as { n: number } | undefined;
+    return { images: img?.n ?? 0, records: rec?.n ?? 0, videos: vid?.n ?? 0 };
   }
 
   // --- internals ---

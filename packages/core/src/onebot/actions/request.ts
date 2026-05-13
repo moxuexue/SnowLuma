@@ -7,7 +7,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const flag = asString(params.flag);
     const approve = asBoolean(params.approve, true);
     if (!flag) return failedResponse(RETCODE.BAD_REQUEST, 'flag is required');
-    if (!ctx.handleFriendRequest) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.handleFriendRequest(flag, approve);
     return okResponse();
   });
@@ -18,7 +17,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const approve = asBoolean(params.approve, true);
     const reason = asString(params.reason);
     if (!flag) return failedResponse(RETCODE.BAD_REQUEST, 'flag is required');
-    if (!ctx.handleGroupRequest) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.handleGroupRequest(flag, subType, approve, reason);
     return okResponse();
   });

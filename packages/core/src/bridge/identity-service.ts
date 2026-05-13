@@ -71,7 +71,6 @@ export class IdentityService {
   private readonly uinByUid = new Map<string, number>();
   private readonly uidByUin = new Map<number, string>();
   private inTransaction = false;
-  private writeFailed = false;
 
   constructor(
     private readonly qqInfo: QQInfo,
@@ -104,10 +103,6 @@ export class IdentityService {
 
   get persistent(): boolean {
     return this.db !== null;
-  }
-
-  get hasWriteFailure(): boolean {
-    return this.writeFailed;
   }
 
   rememberFriends(friends: FriendInfo[]): void {
@@ -693,7 +688,6 @@ export class IdentityService {
     try {
       fn();
     } catch (err) {
-      this.writeFailed = true;
       log.error('identity db write failed [%s]: %s', label, err instanceof Error ? (err.stack ?? err.message) : String(err));
     }
   }

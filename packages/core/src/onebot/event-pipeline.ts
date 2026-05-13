@@ -7,6 +7,7 @@
 // dispatch) compose cleanly without one giant switch statement.
 
 import type { OneBotInstanceContext } from './instance-context';
+import { convertEvent } from './event-converter';
 import { GROUP_MESSAGE_EVENT, PRIVATE_MESSAGE_EVENT, hashMessageIdInt32 } from './message-id';
 import type { QQEventVariant } from '../bridge/events';
 
@@ -75,7 +76,7 @@ const NOTICE_KINDS = [
 ] as const satisfies readonly QQEventVariant['kind'][];
 
 async function convertAndDispatch(ctx: OneBotInstanceContext, event: QQEventVariant): Promise<void> {
-  const converted = await ctx.eventConverter.convert(ctx.uin, event);
+  const converted = await convertEvent(ctx.converterCtx, event);
   if (!converted) return;
   ctx.dispatchEvent(converted);
 }

@@ -2,31 +2,31 @@
 // into bridge events. Port of src/bridge/src/handlers/msg_push_handler.h/.cpp
 
 import { inflateSync } from 'zlib';
-import { protoDecode } from '../../protobuf/decode';
-import { WireMessage } from '../../protobuf/wire';
-import { PushMsgSchema } from '../proto/message';
+import { protoDecode } from '../protobuf/decode';
+import { WireMessage } from '../protobuf/wire';
+import { PushMsgSchema } from './proto/message';
 import {
   MentionExtraSchema, QFaceExtraSchema, QSmallFaceExtraSchema,
   MsgInfoSchema, GroupFileExtraSchema, NotOnlineImageSchema,
-} from '../proto/element';
-import { FileExtraSchema } from '../proto/message';
+} from './proto/element';
+import { FileExtraSchema } from './proto/message';
 import {
   GroupChangeSchema, GroupAdminSchema, GroupJoinSchema,
   GroupInvitationSchema, GroupInviteSchema,
   FriendRequestSchema, FriendRecallSchema,
   GroupMuteSchema, NotifyMessageBodySchema,
   GeneralGrayTipInfoSchema, OperatorInfoSchema,
-} from '../proto/notify';
-import type { QQInfo } from '../qq-info';
-import type { PacketInfo } from '../../protocol/types';
+} from './proto/notify';
+import type { QQInfo } from './qq-info';
+import type { PacketInfo } from '../protocol/types';
 import type {
   QQEventVariant, MessageElement,
   FriendMessage, GroupMessage, TempMessage,
   GroupMemberJoin, GroupMemberLeave, GroupMuteEvent, GroupAdminEvent,
   FriendRecall, GroupRecallEvent, FriendRequestEvent, GroupInviteEvent,
   FriendPokeEvent, GroupPokeEvent, GroupEssenceEvent,
-} from '../events';
-import type { ProtoDecoded, ProtoSchema } from '../../protobuf/decode';
+} from './events';
+import type { ProtoDecoded, ProtoSchema } from '../protobuf/decode';
 
 // --- PkgType enum ---
 const enum PkgType {
@@ -147,7 +147,7 @@ function unwrapGroupNotifyPayload(content: Uint8Array): Uint8Array | null {
 
 // --- Element conversion ---
 
-type ElemDecoded = ProtoDecoded<typeof import('../proto/element').ElemSchema>;
+type ElemDecoded = ProtoDecoded<typeof import('./proto/element').ElemSchema>;
 
 function convertElements(elems: ElemDecoded[]): MessageElement[] {
   const result: MessageElement[] = [];
@@ -217,6 +217,7 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
           height: img.picHeight ?? 0,
           subType: img.pbRes?.subType ?? 0,
           summary: img.pbRes?.summary ?? '[image]',
+          md5Hex: bytesToHex(img.picMd5),
         });
       }
     }
@@ -234,6 +235,7 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
           height: img.height ?? 0,
           subType: img.pbRes?.subType ?? 0,
           summary: img.pbRes?.summary ?? '[image]',
+          md5Hex: bytesToHex(img.md5),
         });
       }
     }
@@ -397,6 +399,9 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
                 fileSize: fi.fileSize ?? 0, width: fi.width ?? 0,
                 height: fi.height ?? 0, imageUrl: url,
               };
+              if (fi.fileHash) me.md5Hex = fi.fileHash;
+              if (fi.fileSha1) me.sha1Hex = fi.fileSha1;
+              if (fi.type?.picFormat) me.picFormat = fi.type.picFormat;
               if (info.extBizInfo?.pic) {
                 me.subType = info.extBizInfo.pic.bizType ?? 0;
                 me.summary = info.extBizInfo.pic.textSummary || '[image]';
@@ -408,6 +413,10 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
                 type: 'record', fileName: fi.fileName ?? '',
                 fileId: idx.fileUuid ?? '', duration: fi.time ?? 0,
                 fileHash: fi.fileHash ?? '',
+                fileSize: fi.fileSize ?? 0,
+                md5Hex: fi.fileHash ?? '',
+                sha1Hex: fi.fileSha1 ?? '',
+                voiceFormat: fi.type?.voiceFormat ?? 0,
                 mediaNode: {
                   fileUuid: idx.fileUuid,
                   storeId: idx.storeId,
@@ -439,6 +448,11 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
                 fileId: idx.fileUuid ?? '', fileSize: fi.fileSize ?? 0,
                 duration: fi.time ?? 0,
                 fileHash: fi.fileHash ?? '',
+                width: fi.width ?? 0,
+                height: fi.height ?? 0,
+                md5Hex: fi.fileHash ?? '',
+                sha1Hex: fi.fileSha1 ?? '',
+                videoFormat: fi.type?.videoFormat ?? 0,
                 mediaNode: {
                   fileUuid: idx.fileUuid,
                   storeId: idx.storeId,
@@ -483,17 +497,20 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
 }
 
 function extractRichtextExtras(
-  rt: ProtoDecoded<typeof import('../proto/message').RichTextSchema>,
+  rt: ProtoDecoded<typeof import('./proto/message').RichTextSchema>,
   elements: MessageElement[],
   isGroup = false
 ): void {
   // Ptt (voice)
   if (rt.ptt) {
     const p = rt.ptt;
+    const md5Hex = p.fileMd5 && p.fileMd5.length > 0 ? bytesToHex(p.fileMd5) : '';
     const me: MessageElement = {
       type: 'record', fileName: p.fileName ?? '',
       fileSize: p.fileSize ?? 0, duration: p.time ?? 0,
-      fileHash: p.fileMd5 && p.fileMd5.length > 0 ? bytesToHex(p.fileMd5) : '',
+      fileHash: md5Hex,
+      md5Hex,
+      voiceFormat: p.format ?? 0,
     };
     if (isGroup && (p.fileId ?? 0n) !== 0n) {
       me.fileId = p.groupFileKey ?? '';

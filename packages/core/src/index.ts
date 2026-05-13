@@ -1,4 +1,3 @@
-import { NtqqHandler } from './protocol/ntqq-handler';
 import { BridgeManager } from './bridge/manager';
 import { OneBotManager } from './onebot/manager';
 import { loadRuntimeConfig } from './common/runtime';
@@ -11,13 +10,20 @@ const log = createLogger('App');
 async function main() {
   log.info('SnowLuma starting');
 
-  const ntqq = new NtqqHandler();
   const bridgeManager = new BridgeManager();
   const oneBotManager = new OneBotManager();
-  const hookManager = new HookManager(ntqq, bridgeManager);
+  // HookManager defaults its packet sink to bridgeManager.onPacket, so
+  // every parsed hook packet reaches the per-UIN bridge dispatcher with
+  // no intermediate layer.
+  // Env var SNOWLUMA_HOOK_AUTOLOAD wins over runtime.json so Docker /
+  // headless deployments can flip auto-injection on without touching the
+  // persisted user config volume.
+  const autoLoadOnDiscovery = resolveAutoLoad(runtimeConfig.hookAutoLoad);
+  const hookManager = new HookManager({ bridgeManager, autoLoadOnDiscovery });
+  if (autoLoadOnDiscovery) {
+    log.info('hook auto-load enabled: every discovered QQ process will be injected');
+  }
 
-  // Bind bridge manager to NTQQ handler (receives all parsed packets)
-  bridgeManager.bind(ntqq);
   oneBotManager.bind(bridgeManager);
 
   if (
@@ -39,6 +45,16 @@ async function main() {
     hookManager.dispose();
     process.exit(0);
   });
+}
+
+function resolveAutoLoad(fromConfig: boolean | undefined): boolean {
+  const envRaw = process.env.SNOWLUMA_HOOK_AUTOLOAD;
+  if (typeof envRaw === 'string' && envRaw.trim()) {
+    const v = envRaw.trim().toLowerCase();
+    if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true;
+    if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false;
+  }
+  return fromConfig === true;
 }
 
 main().catch((error) => {

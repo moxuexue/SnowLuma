@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMsgPush, MSG_PUSH_CMD } from '../src/bridge/handlers/msg-push-handler';
+import { parseMsgPush, MSG_PUSH_CMD } from '../src/bridge/msg-push-handler';
 import { QQInfo, type GroupMemberInfo, type QQGroupInfo } from '../src/bridge/qq-info';
 import { PushMsgSchema } from '../src/bridge/proto/message';
 import { GroupChangeSchema, OperatorInfoSchema } from '../src/bridge/proto/notify';

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { MediaStore } from '../src/onebot/media-store';
-import { EventConverter } from '../src/onebot/event-converter';
+import { convertEvent, type ConverterContext } from '../src/onebot/event-converter';
 import type { GroupMessage, FriendMessage, MessageElement } from '../src/bridge/events';
 
 const SELF_UIN = '10001';
@@ -208,7 +208,7 @@ describe('MediaStore basic semantics', () => {
   });
 });
 
-describe('EventConverter media segment sink → MediaStore wiring', () => {
+describe('convertEvent media segment sink → MediaStore wiring', () => {
   const dbs: string[] = [];
 
   afterEach(() => {
@@ -221,14 +221,19 @@ describe('EventConverter media segment sink → MediaStore wiring', () => {
   });
 
   it('emits sink invocations for image segments with the right context', async () => {
-    const conv = new EventConverter();
     const sinkCalls: Array<{ type: string; isGroup: boolean; sessionId: number; file: string }> = [];
-    conv.setMediaSegmentSink((type, _element, data, isGroup, sessionId) => {
-      sinkCalls.push({ type, isGroup, sessionId, file: String(data.file ?? '') });
-    });
+    const ctx: ConverterContext = {
+      selfId: SELF_ID,
+      imageUrlResolver: null,
+      mediaUrlResolver: null,
+      messageIdResolver: null,
+      mediaSegmentSink: (type, _element, data, isGroup, sessionId) => {
+        sinkCalls.push({ type, isGroup, sessionId, file: String(data.file ?? '') });
+      },
+    };
 
-    await conv.convert(SELF_UIN, makeGroupMessage([imageElement()]));
-    await conv.convert(SELF_UIN, makeFriendMessage([recordElement()]));
+    await convertEvent(ctx, makeGroupMessage([imageElement()]));
+    await convertEvent(ctx, makeFriendMessage([recordElement()]));
 
     expect(sinkCalls).toEqual([
       { type: 'image', isGroup: true, sessionId: GROUP_ID, file: 'abc.png' },
@@ -241,42 +246,45 @@ describe('EventConverter media segment sink → MediaStore wiring', () => {
     dbs.push(dbPath);
 
     const store = new MediaStore(dbPath);
-    const conv = new EventConverter();
-    conv.setImageUrlResolver((element) => element.imageUrl ?? '');
-    conv.setMediaUrlResolver(async (element) => element.url ?? '');
-    conv.setMediaSegmentSink((type, element, data, isGroup, sessionId) => {
-      const url = typeof data.url === 'string' ? data.url : '';
-      const file = typeof data.file === 'string' ? data.file : '';
-      if (type === 'image') {
-        store.rememberImage({
-          file: file || element.fileId || '',
-          url,
-          fileSize: element.fileSize ?? 0,
-          fileName: element.fileId ?? '',
-          subType: element.subType ?? 0,
-          summary: element.summary ?? '',
-          imageUrl: element.imageUrl ?? '',
-          isGroup,
-          sessionId,
-        });
-      } else {
-        store.rememberRecord({
-          file: file || element.fileName || element.fileId || '',
-          fileId: element.fileId ?? '',
-          url,
-          fileSize: element.fileSize ?? 0,
-          fileName: element.fileName ?? '',
-          duration: element.duration ?? 0,
-          fileHash: element.fileHash ?? '',
-          mediaNode: element.mediaNode,
-          isGroup,
-          sessionId,
-        });
-      }
-    });
+    const ctx: ConverterContext = {
+      selfId: SELF_ID,
+      imageUrlResolver: (element) => element.imageUrl ?? '',
+      mediaUrlResolver: async (element) => element.url ?? '',
+      messageIdResolver: null,
+      mediaSegmentSink: (type, element, data, isGroup, sessionId) => {
+        const url = typeof data.url === 'string' ? data.url : '';
+        const file = typeof data.file === 'string' ? data.file : '';
+        if (type === 'image') {
+          store.rememberImage({
+            file: file || element.fileId || '',
+            url,
+            fileSize: element.fileSize ?? 0,
+            fileName: element.fileId ?? '',
+            subType: element.subType ?? 0,
+            summary: element.summary ?? '',
+            imageUrl: element.imageUrl ?? '',
+            isGroup,
+            sessionId,
+          });
+        } else {
+          store.rememberRecord({
+            file: file || element.fileName || element.fileId || '',
+            fileId: element.fileId ?? '',
+            url,
+            fileSize: element.fileSize ?? 0,
+            fileName: element.fileName ?? '',
+            duration: element.duration ?? 0,
+            fileHash: element.fileHash ?? '',
+            mediaNode: element.mediaNode,
+            isGroup,
+            sessionId,
+          });
+        }
+      },
+    };
 
-    await conv.convert(SELF_UIN, makeGroupMessage([imageElement()]));
-    await conv.convert(SELF_UIN, makeFriendMessage([recordElement()]));
+    await convertEvent(ctx, makeGroupMessage([imageElement()]));
+    await convertEvent(ctx, makeFriendMessage([recordElement()]));
 
     const img = store.findImage('abc.png');
     expect(img).not.toBeNull();
@@ -297,10 +305,15 @@ describe('EventConverter media segment sink → MediaStore wiring', () => {
   });
 
   it('does not invoke the sink when no media segments are present', async () => {
-    const conv = new EventConverter();
     let calls = 0;
-    conv.setMediaSegmentSink(() => { calls++; });
-    await conv.convert(SELF_UIN, makeGroupMessage([{ type: 'text', text: 'hello' }]));
+    const ctx: ConverterContext = {
+      selfId: SELF_ID,
+      imageUrlResolver: null,
+      mediaUrlResolver: null,
+      messageIdResolver: null,
+      mediaSegmentSink: () => { calls++; },
+    };
+    await convertEvent(ctx, makeGroupMessage([{ type: 'text', text: 'hello' }]));
     expect(calls).toBe(0);
   });
 });

@@ -64,6 +64,11 @@ export interface SetGroupKickParams extends GroupIdParams {
   reject_add_request?: boolean;
 }
 
+export interface SetGroupKickMembersParams extends GroupIdParams {
+  user_id: number[];
+  reject_add_request?: boolean;
+}
+
 export interface SetGroupBanParams extends GroupIdParams {
   user_id: number;
   duration?: number;
@@ -71,6 +76,10 @@ export interface SetGroupBanParams extends GroupIdParams {
 
 export interface SetGroupWholeBanParams extends GroupIdParams {
   enable?: boolean;
+}
+
+export interface SetGroupAddOptionParams extends GroupIdParams {
+  add_type: number;
 }
 
 export interface SetGroupAdminParams extends GroupIdParams {
@@ -254,10 +263,29 @@ export interface SetFriendRemarkParams extends UserIdParams {
   remark: string;
 }
 
+export interface SetGroupRemarkParams extends GroupIdParams {
+  remark: string;
+}
+
 export interface SetMsgEmojiLikeParams extends JsonObject {
   message_id: number;
   emoji_id: string;
   set?: boolean;
+}
+
+export interface FetchCustomFaceParams extends JsonObject {
+  count?: number;
+}
+
+export interface GetEmojiLikesParams extends MessageIdParams {
+  emoji_id: string;
+}
+
+export interface FetchEmojiLikeParams extends MessageIdParams {
+  emojiId: string;
+  emojiType?: number;
+  count?: number;
+  cookie?: string;
 }
 
 export interface DownloadFileParams extends JsonObject {

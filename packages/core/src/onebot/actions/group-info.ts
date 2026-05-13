@@ -61,9 +61,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
     }
 
-    if (!ctx.getGroupHonorInfo) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
-    }
 
     const typeValues = Object.values(WebHonorType) as string[];
     if (!typeValues.includes(typeStr)) {

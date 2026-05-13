@@ -18,9 +18,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       if (!Number.isInteger(groupId) || groupId <= 0) {
         return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
       }
-      if (!ctx.sendGroupMessage) {
-        return failedResponse(RETCODE.ACTION_FAILED, 'send_group_msg is not implemented');
-      }
       const result = await ctx.sendGroupMessage(groupId, message, autoEscape);
       return okResponse({ message_id: result.messageId });
     }
@@ -28,9 +25,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     if (!Number.isInteger(userId) || userId <= 0) {
       return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    }
-    if (!ctx.sendPrivateMessage) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'send_private_msg is not implemented');
     }
     const result = await ctx.sendPrivateMessage(userId, message, autoEscape);
     return okResponse({ message_id: result.messageId });
@@ -47,9 +41,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (message === undefined) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message is required');
     }
-    if (!ctx.sendPrivateMessage) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'send_private_msg is not implemented');
-    }
 
     const result = await ctx.sendPrivateMessage(userId, message, autoEscape);
     return okResponse({ message_id: result.messageId });
@@ -65,9 +56,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
     if (message === undefined) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message is required');
-    }
-    if (!ctx.sendGroupMessage) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'send_group_msg is not implemented');
     }
 
     const result = await ctx.sendGroupMessage(groupId, message, autoEscape);
@@ -96,9 +84,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messageId = asNumber(params.message_id);
     if (!Number.isInteger(messageId) || messageId === 0) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message_id is required');
-    }
-    if (!ctx.deleteMessage) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'delete_msg is not implemented');
     }
 
     const meta = ctx.getMessageMeta(messageId);

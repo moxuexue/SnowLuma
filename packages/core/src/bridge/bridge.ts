@@ -6,10 +6,10 @@ import type { PacketInfo } from '../protocol/types';
 import type { ForwardNodePayload, QQEventVariant, MessageElement } from './events';
 import type { FriendInfo, QQGroupInfo, GroupMemberInfo, UserProfileInfo, GroupRequestInfo } from './qq-info';
 import { QQInfo } from './qq-info';
-import { MSG_PUSH_CMD, parseMsgPush } from './handlers/msg-push-handler';
+import { MSG_PUSH_CMD, parseMsgPush } from './msg-push-handler';
 import type { PacketSender, SendPacketResult } from '../protocol/packet-sender';
 import { protoEncode, protoDecode } from '../protobuf/decode';
-import { buildSendElems } from './builders/element-builder';
+import { buildSendElems } from './element-builder';
 import { IdentityService } from './identity-service';
 import { createLogger } from '../utils/logger';
 import {
@@ -33,6 +33,7 @@ import {
   muteGroupAll as muteGroupAll_,
   setGroupAddOption as setGroupAddOption_,
   setGroupSearch as setGroupSearch_,
+  setGroupAddRequest as setGroupAddRequest_,
   kickGroupMember as kickGroupMember_,
   kickGroupMembers as kickGroupMembers_,
   leaveGroup as leaveGroup_,
@@ -40,8 +41,10 @@ import {
   setGroupCard as setGroupCard_,
   setGroupName as setGroupName_,
   setGroupSpecialTitle as setGroupSpecialTitle_,
-  setFriendAddRequest as setFriendAddRequest_,
-  deleteFriend as deleteFriend_,
+  setGroupRemark as setGroupRemark_,
+  getGroupAtAllRemain as getGroupAtAllRemain_,
+} from './actions/group-admin';
+import {
   uploadGroupFile as uploadGroupFile_,
   uploadPrivateFile as uploadPrivateFile_,
   fetchGroupFiles as fetchGroupFiles_,
@@ -51,40 +54,51 @@ import {
   fetchPrivatePttUrlByNode as fetchPrivatePttUrlByNode_,
   fetchGroupVideoUrlByNode as fetchGroupVideoUrlByNode_,
   fetchPrivateVideoUrlByNode as fetchPrivateVideoUrlByNode_,
-  uploadForwardNodes as uploadForwardNodes_,
-  fetchForwardNodes as fetchForwardNodes_,
   deleteGroupFile as deleteGroupFile_,
   moveGroupFile as moveGroupFile_,
   createGroupFileFolder as createGroupFileFolder_,
   deleteGroupFileFolder as deleteGroupFileFolder_,
   renameGroupFileFolder as renameGroupFileFolder_,
-  setGroupAddRequest as setGroupAddRequest_,
-  sendPoke as sendPoke_,
-  sendLike as sendLike_,
-  setGroupEssence as setGroupEssence_,
-  setGroupReaction as setGroupReaction_,
+  fetchGroupFileCount as fetchGroupFileCount_,
+} from './actions/group-file';
+import {
   recallGroupMessage as recallGroupMessage_,
   recallPrivateMessage as recallPrivateMessage_,
   markPrivateMessageRead as markGroupMsgAsRead_,
   markGroupMessageRead as markPrivateMsgAsRead_,
+  setGroupEssence as setGroupEssence_,
+} from './actions/group-message';
+import {
+  sendPoke as sendPoke_,
+  sendLike as sendLike_,
+  setGroupReaction as setGroupReaction_,
+  getEmojiLikes as getEmojiLikes_,
+} from './actions/interaction';
+import {
+  uploadForwardNodes as uploadForwardNodes_,
+  fetchForwardNodes as fetchForwardNodes_,
+} from './actions/forward';
+import {
+  setFriendAddRequest as setFriendAddRequest_,
+  deleteFriend as deleteFriend_,
   setFriendRemark as setFriendRemark_,
-  setGroupRemark as setGroupRemark_,
-  fetchGroupFileCount as fetchGroupFileCount_,
+} from './actions/friend';
+import {
   setOnlineStatus as setOnlineStatus_,
   setProfile as setProfile_,
-  getProfileLike as getProfileLike_,
-  getGroupAtAllRemain as getGroupAtAllRemain_,
-  getUnidirectionalFriendList as getUnidirectionalFriendList_,
   setSelfLongNick as setSelfLongNick_,
   setInputStatus as setInputStatus_,
+  setAvatar as setAvatar_,
+  fetchCustomFace as fetchCustomFace_,
+  getProfileLike as getProfileLike_,
+  getUnidirectionalFriendList as getUnidirectionalFriendList_,
+} from './actions/profile';
+import {
   translateEn2Zh as translateEn2Zh_,
   getMiniAppArk as getMiniAppArk_,
   clickInlineKeyboardButton as clickInlineKeyboardButton_,
   sendGroupSign as sendGroupSign_,
-  setAvatar as setAvatar_,
-  fetchCustomFace as fetchCustomFace_,
-  getEmojiLikes as getEmojiLikes_,
-} from './bridge-actions';
+} from './actions/misc';
 import {
   getGroupHonorInfo as getGroupHonorInfo_,
   forceFetchClientKey as forceFetchClientKey_,
@@ -97,8 +111,8 @@ import {
   getCsrfToken as getCsrfToken_,
   getCredentials as getCredentials_,
 } from './web-actions';
-import type { GroupFilesResult } from './bridge-actions';
-import type { MediaIndexNode } from './bridge-actions';
+import type { GroupFilesResult } from './actions/group-file';
+import type { MediaIndexNode } from './actions/shared';
 import { BridgeEventBus } from './event-bus';
 
 type CmdParser = (pkt: PacketInfo, qqInfo: QQInfo) => QQEventVariant[];

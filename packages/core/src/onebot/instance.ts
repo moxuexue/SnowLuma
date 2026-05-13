@@ -2,9 +2,11 @@ import path from 'path';
 import type { Bridge } from '../bridge/bridge';
 import type { QQInfo } from '../bridge/qq-info';
 import { ApiHandler } from './api-handler';
-import { EventConverter } from './event-converter';
-import { MessageStore } from './message-store';
+import type { ConverterContext } from './event-converter';
+import { MediaIndexer } from './media-indexer';
 import { MediaStore } from './media-store';
+import { MediaUrlResolver } from './media-url-resolver';
+import { MessageStore } from './message-store';
 import { RKeyCache } from './instance-rkey';
 import { buildApiContext, type OneBotInstanceContext } from './instance-context';
 import { registerEventPipeline } from './event-pipeline';
@@ -28,7 +30,7 @@ export class OneBotInstance {
   readonly qqInfo: QQInfo;
   private readonly bridge: Bridge;
   private readonly apiHandler: ApiHandler;
-  private readonly eventConverter: EventConverter;
+  private readonly converterCtx: ConverterContext;
   private readonly messageStore: MessageStore;
   private readonly mediaStore: MediaStore;
   private readonly networkManager: OneBotNetworkManager;
@@ -46,70 +48,26 @@ export class OneBotInstance {
     this.qqInfo = qqInfo;
     this.bridge = bridge;
 
-    this.eventConverter = new EventConverter();
     this.rkeyCache = new RKeyCache();
     this.mediaStore = new MediaStore(path.join('data', this.uin, 'media.db'));
-    this.eventConverter.setImageUrlResolver((element, isGroup) =>
-      this.rkeyCache.resolveImageUrl(this.bridge, element, isGroup));
-    this.eventConverter.setMediaUrlResolver(async (element, isGroup, sessionId) => {
-      // Fetch URL from bridge if not already present
-      if (!element.url) {
-        try {
-          if (element.type === 'file' && element.fileId) {
-            element.url = isGroup
-              ? await this.bridge.fetchGroupFileUrl(sessionId, element.fileId)
-              : element.fileHash
-                ? await this.bridge.fetchPrivateFileUrl(sessionId, element.fileId, element.fileHash)
-                : '';
-          } else if ((element.type === 'record' || element.type === 'video') && element.mediaNode) {
-            if (isGroup) {
-              element.url = element.type === 'record'
-                ? await this.bridge.fetchGroupPttUrlByNode(sessionId, element.mediaNode)
-                : await this.bridge.fetchGroupVideoUrlByNode(sessionId, element.mediaNode);
-            } else {
-              element.url = element.type === 'record'
-                ? await this.bridge.fetchPrivatePttUrlByNode(element.mediaNode)
-                : await this.bridge.fetchPrivateVideoUrlByNode(element.mediaNode);
-            }
-          }
-        } catch { /* best-effort */ }
-      }
-      // Then apply RKey if needed
-      return this.rkeyCache.resolveMediaUrl(this.bridge, element, isGroup);
-    });
-    this.eventConverter.setMediaSegmentSink((mediaType, element, data, isGroup, sessionId) => {
-      const url = typeof data.url === 'string' ? data.url : '';
-      const file = typeof data.file === 'string' ? data.file : '';
-      if (mediaType === 'image') {
-        this.mediaStore.rememberImage({
-          file: file || element.fileId || '',
-          url,
-          fileSize: element.fileSize ?? 0,
-          fileName: element.fileId ?? '',
-          subType: element.subType ?? 0,
-          summary: element.summary ?? '',
-          imageUrl: element.imageUrl ?? '',
-          isGroup,
-          sessionId,
-        });
-        return;
-      }
-      this.mediaStore.rememberRecord({
-        file: file || element.fileName || element.fileId || '',
-        fileId: element.fileId ?? '',
-        url,
-        fileSize: element.fileSize ?? 0,
-        fileName: element.fileName ?? '',
-        duration: element.duration ?? 0,
-        fileHash: element.fileHash ?? '',
-        mediaNode: element.mediaNode,
-        isGroup,
-        sessionId,
-      });
-    });
-    this.eventConverter.setMessageIdResolver((isGroup, sessionId, sequence, eventName) =>
-      hashMessageIdInt32(sequence, sessionId, eventName || (isGroup ? GROUP_MESSAGE_EVENT : PRIVATE_MESSAGE_EVENT)));
     this.messageStore = new MessageStore(path.join('data', this.uin, 'messages.json'));
+
+    // The converter context's four callbacks delegate to small, focused
+    // modules so this constructor doesn't carry the bridge-URL fetch
+    // branching or the mediaStore field-mapping fanout inline.
+    const mediaUrlResolver = new MediaUrlResolver(this.bridge, this.rkeyCache);
+    const mediaIndexer = new MediaIndexer(this.mediaStore);
+    this.converterCtx = {
+      selfId: parseInt(this.uin, 10) || 0,
+      imageUrlResolver: (element, isGroup) =>
+        this.rkeyCache.resolveImageUrl(this.bridge, element, isGroup),
+      mediaUrlResolver: (element, isGroup, sessionId) =>
+        mediaUrlResolver.resolve(element, isGroup, sessionId),
+      messageIdResolver: (isGroup, sessionId, sequence, eventName) =>
+        hashMessageIdInt32(sequence, sessionId, eventName || (isGroup ? GROUP_MESSAGE_EVENT : PRIVATE_MESSAGE_EVENT)),
+      mediaSegmentSink: (mediaType, element, data, isGroup, sessionId) =>
+        mediaIndexer.remember(mediaType, element, data, isGroup, sessionId),
+    };
 
     // Shared instance context. Only carries fields that are actually read
     // through it — api handler and network manager stay as direct fields on
@@ -121,7 +79,7 @@ export class OneBotInstance {
       bridge: this.bridge,
       messageStore: this.messageStore,
       mediaStore: this.mediaStore,
-      eventConverter: this.eventConverter,
+      converterCtx: this.converterCtx,
       config,
       musicSignUrl: config.musicSignUrl,
       cacheMessageMeta: (messageId, meta) => this.cacheMessageMeta(messageId, meta),

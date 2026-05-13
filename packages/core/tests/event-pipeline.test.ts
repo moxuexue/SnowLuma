@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BridgeEventBus } from '../src/bridge/event-bus';
-import { EventConverter } from '../src/onebot/event-converter';
+
+// Wrap convertEvent in a vi.fn that delegates to the real impl by
+// default, so one test can override it to return null without making
+// the others lose the real conversion behavior.
+vi.mock('../src/onebot/event-converter', async () => {
+  const actual = await vi.importActual<typeof import('../src/onebot/event-converter')>('../src/onebot/event-converter');
+  return { ...actual, convertEvent: vi.fn(actual.convertEvent) };
+});
+
+import { convertEvent, type ConverterContext } from '../src/onebot/event-converter';
 import { registerEventPipeline } from '../src/onebot/event-pipeline';
 import type { OneBotInstanceContext } from '../src/onebot/instance-context';
 import type {
@@ -82,7 +91,13 @@ function makeContext(extra: Partial<OneBotInstanceContext> = {}): {
 } {
   const bus = new BridgeEventBus();
   const fakeBridge: FakeBridge = { events: bus };
-  const eventConverter = new EventConverter();
+  const converterCtx: ConverterContext = {
+    selfId: SELF_ID,
+    imageUrlResolver: null,
+    mediaUrlResolver: null,
+    messageIdResolver: null,
+    mediaSegmentSink: null,
+  };
   const metaCalls: Array<{ id: number; meta: MessageMeta }> = [];
   const dispatchCalls: JsonObject[] = [];
 
@@ -93,7 +108,7 @@ function makeContext(extra: Partial<OneBotInstanceContext> = {}): {
     bridge: fakeBridge as never,
     messageStore: {} as never,
     mediaStore: {} as never,
-    eventConverter,
+    converterCtx,
     config: { networks: { httpServers: [], httpClients: [], wsServers: [], wsClients: [] } } as never,
     cacheMessageMeta: (id, meta) => { metaCalls.push({ id, meta }); },
     dispatchEvent: (event) => { dispatchCalls.push(event); },
@@ -180,11 +195,10 @@ describe('registerEventPipeline', () => {
   });
 
   it('skips dispatch for kinds without a converter mapping (no crash)', async () => {
-    // Stub `convert` on a real EventConverter instance so the type stays
-    // honest -- no structural casts.
-    const stubbed = new EventConverter();
-    stubbed.convert = vi.fn().mockResolvedValue(null);
-    const { ctx, bus, dispatchCalls } = makeContext({ eventConverter: stubbed });
+    // Force convertEvent to return null for one call; assert the pipeline
+    // honours the `if (!converted) return;` guard.
+    vi.mocked(convertEvent).mockResolvedValueOnce(null);
+    const { ctx, bus, dispatchCalls } = makeContext();
     registerEventPipeline(ctx);
 
     await bus.emit(makeFriendMessage());

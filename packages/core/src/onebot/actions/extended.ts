@@ -9,7 +9,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const times = asNumber(params.times) || 1;
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    if (!ctx.sendLike) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.sendLike(userId, times);
     return okResponse();
   });
@@ -18,7 +17,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const targetId = asNumber(params.target_id) || undefined;
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    if (!ctx.sendFriendPoke) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.sendFriendPoke(userId, targetId);
     return okResponse();
   });
@@ -27,7 +25,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     const userId = asNumber(params.user_id);
     if (!groupId || !userId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id and user_id are required');
-    if (!ctx.sendGroupPoke) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.sendGroupPoke(groupId, userId);
     return okResponse();
   });
@@ -37,10 +34,8 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
     if (groupId) {
-      if (!ctx.sendGroupPoke) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
       await ctx.sendGroupPoke(groupId, userId);
     } else {
-      if (!ctx.sendFriendPoke) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
       await ctx.sendFriendPoke(userId);
     }
     return okResponse();
@@ -53,7 +48,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!Number.isInteger(messageId) || messageId === 0) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message_id is required');
     }
-    if (!ctx.setEssenceMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.setEssenceMsg(messageId);
     return okResponse();
   });
@@ -63,7 +57,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!Number.isInteger(messageId) || messageId === 0) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message_id is required');
     }
-    if (!ctx.deleteEssenceMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.deleteEssenceMsg(messageId);
     return okResponse();
   });
@@ -72,9 +65,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
 
-    if (!ctx.getGroupEssenceAll) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const essenceDataAll = await ctx.getGroupEssenceAll(groupId);
@@ -108,7 +98,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id does not match message session');
     }
 
-    if (!ctx.setGroupReaction) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.setGroupReaction(meta.targetId, meta.sequence, code, isSet);
     return okResponse();
   });
@@ -120,7 +109,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messageId = asNumber(params.message_id) || 0;
     const count = asNumber(params.count) || 20;
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
-    if (!ctx.getGroupMsgHistory) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const messages = await ctx.getGroupMsgHistory(groupId, messageId, count);
     return okResponse({ messages });
   });
@@ -130,7 +118,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messageId = asNumber(params.message_id) || 0;
     const count = asNumber(params.count) || 20;
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    if (!ctx.getFriendMsgHistory) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const messages = await ctx.getFriendMsgHistory(userId, messageId, count);
     return okResponse({ messages });
   });
@@ -153,7 +140,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id does not match message session');
     }
 
-    if (!ctx.markGroupMsgAsRead) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     await ctx.markGroupMsgAsRead(groupId, meta.sequence);
     return okResponse();
@@ -177,7 +163,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'user_id does not match message session');
     }
 
-    if (!ctx.markPrivateMsgAsRead) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     await ctx.markPrivateMsgAsRead(userId, meta.sequence);
     return okResponse();
@@ -197,8 +182,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (targetId && targetId !== meta.targetId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'target_id does not match message session');
     }
-
-    if (!(ctx.markPrivateMsgAsRead && ctx.markGroupMsgAsRead)) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     if (meta.isGroup) {
       await ctx.markGroupMsgAsRead(targetId, meta.sequence);
@@ -239,9 +222,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and content are required');
     }
 
-    if (!ctx.sendGroupNotice) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const options = {
@@ -262,9 +242,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
 
-    if (!ctx.getGroupNotice) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const notices = await ctx.getGroupNotice(groupId);
@@ -282,9 +259,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and fid/notice_id are required');
     }
 
-    if (!ctx.deleteGroupNotice) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const success = await ctx.deleteGroupNotice(groupId, fid);
@@ -304,7 +278,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messages = asMessage(params.messages ?? params.message);
     const groupId = asNumber(params.group_id);
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
-    if (!ctx.sendForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     const result = await ctx.sendForwardMsg(messages);
     const data: Record<string, unknown> = {
@@ -319,7 +292,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('upload_foward_msg', async (params) => {
     const messages = asMessage(params.messages ?? params.message);
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
-    if (!ctx.sendForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const result = await ctx.sendForwardMsg(messages);
     return okResponse({ res_id: result.forwardId, forward_id: result.forwardId, message_id: 0 });
   });
@@ -344,7 +316,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
     }
 
-    if (!ctx.sendForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const result = await ctx.sendForwardMsg(messages);
     return okResponse({ message_id: 0, res_id: result.forwardId, forward_id: result.forwardId });
   });
@@ -354,7 +325,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messages = asMessage(params.messages ?? params.message);
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
-    if (!ctx.sendGroupForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     const result = await ctx.sendGroupForwardMsg(groupId, messages);
     return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
@@ -365,7 +335,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messages = asMessage(params.messages ?? params.message);
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
-    if (!ctx.sendPrivateForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     const result = await ctx.sendPrivateForwardMsg(userId, messages);
     return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
@@ -400,7 +369,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
 
     if (!id) return failedResponse(RETCODE.BAD_REQUEST, 'id or message_id is required');
-    if (!ctx.getForwardMsg) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     const messages = await ctx.getForwardMsg(id);
     return okResponse({ messages });
@@ -411,7 +379,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_image', async (params) => {
     const file = asString(params.file) || asString(params.file_id);
     if (!file) return failedResponse(RETCODE.BAD_REQUEST, 'file is required');
-    if (!ctx.getImageInfo) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const info = await ctx.getImageInfo(file);
     if (info) return okResponse(info);
     return failedResponse(RETCODE.ACTION_FAILED, 'image not found in cache');
@@ -420,7 +387,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_record', async (params) => {
     const file = asString(params.file) || asString(params.file_id);
     if (!file) return failedResponse(RETCODE.BAD_REQUEST, 'file is required');
-    if (!ctx.getRecordInfo) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const info = await ctx.getRecordInfo(file);
     if (info) return okResponse(info);
     return failedResponse(RETCODE.ACTION_FAILED, 'record not found in cache');
@@ -431,7 +397,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_cookies', async (params) => {
     const domain = asString(params.domain) || 'qun.qq.com';
 
-    if (!ctx.getCookiesStr) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     try {
       const cookies = await ctx.getCookiesStr(domain);
@@ -442,7 +407,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   });
 
   h.registerAction('get_csrf_token', async () => {
-    if (!ctx.getCsrfToken) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     try {
       const token = await ctx.getCsrfToken();
@@ -455,7 +419,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_credentials', async (params) => {
     const domain = asString(params.domain) || 'qun.qq.com';
 
-    if (!ctx.getCredentials) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
 
     try {
       const creds = await ctx.getCredentials(domain);
@@ -489,7 +452,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const remark = asString(params.remark) ?? '';
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    if (!ctx.setFriendRemark) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.setFriendRemark(userId, remark);
     return okResponse();
   });
@@ -498,7 +460,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     const remark = asString(params.remark) ?? '';
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
-    if (!ctx.setGroupRemark) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.setGroupRemark(groupId, remark);
     return okResponse();
   });
@@ -510,7 +471,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!Number.isInteger(messageId) || messageId === 0 || !emojiId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'message_id and emoji_id are required');
     }
-    if (!ctx.setMsgEmojiLike) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.setMsgEmojiLike(messageId, emojiId, set);
     return okResponse();
   });
@@ -580,9 +540,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const nickname = params.nickname !== undefined ? asString(params.nickname) : undefined;
     const personalNote = params.personal_note !== undefined ? asString(params.personal_note) : undefined;
 
-    if (!ctx.setProfile) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.setProfile(nickname, personalNote);
@@ -603,9 +560,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'status is required');
     }
 
-    if (!ctx.setOnlineStatus) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.setOnlineStatus(status, extStatus, batteryStatus);
@@ -623,12 +577,30 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return okResponse([]);
   });
 
-  h.registerAction('forward_friend_single_msg', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('forward_friend_single_msg', async (params) => {
+    const messageId = asNumber(params.message_id);
+    const userId = asNumber(params.user_id);
+    if (!messageId) return failedResponse(RETCODE.BAD_REQUEST, 'message_id is required');
+    if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
+    try {
+      const result = await ctx.forwardSingleMsg(messageId, { userId });
+      return okResponse({ message_id: result.messageId });
+    } catch (err) {
+      return failedResponse(RETCODE.ACTION_FAILED, err instanceof Error ? err.message : String(err));
+    }
   });
 
-  h.registerAction('forward_group_single_msg', async () => {
-    return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
+  h.registerAction('forward_group_single_msg', async (params) => {
+    const messageId = asNumber(params.message_id);
+    const groupId = asNumber(params.group_id);
+    if (!messageId) return failedResponse(RETCODE.BAD_REQUEST, 'message_id is required');
+    if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
+    try {
+      const result = await ctx.forwardSingleMsg(messageId, { groupId });
+      return okResponse({ message_id: result.messageId });
+    } catch (err) {
+      return failedResponse(RETCODE.ACTION_FAILED, err instanceof Error ? err.message : String(err));
+    }
   });
 
   // todo 我的建议是引入数据库api   纯协议我不知道这种api怎么实现，ntQQ在实现这个方法的时候只进行了数据库查询，完全没碰网络
@@ -641,9 +613,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const start = asNumber(params.start) || 0;
     const count = asNumber(params.count) || 10;
 
-    if (!ctx.getProfileLike) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const data = await ctx.getProfileLike(userId, start, count);
@@ -655,9 +624,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
   h.registerAction('fetch_custom_face', async (params) => {
     const count = asNumber(params.count) || 10;
-    if (!ctx.fetchCustomFace) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
     try {
       const urls = await ctx.fetchCustomFace(count);
       return okResponse(urls);
@@ -670,7 +636,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const messageId = asNumber(params.message_id);
     const emojiId = asString(params.emoji_id) || '';
     if (!messageId || !emojiId) return failedResponse(RETCODE.BAD_REQUEST, 'message_id and emoji_id are required');
-    if (!ctx.getEmojiLikes) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     try {
       const meta = ctx.getMessageMeta(messageId);
       if (!meta?.isGroup || !meta?.sequence) return failedResponse(RETCODE.BAD_REQUEST, 'message not found or not a group message');
@@ -688,7 +653,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const count = asNumber(params.count) || 10;
     const cookie = asString(params.cookie) || '';
     if (!messageId || !emojiId) return failedResponse(RETCODE.BAD_REQUEST, 'message_id and emojiId are required');
-    if (!ctx.getEmojiLikes) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     try {
       const meta = ctx.getMessageMeta(messageId);
       if (!meta?.isGroup || !meta?.sequence) return failedResponse(RETCODE.BAD_REQUEST, 'message not found or not a group message');
@@ -739,9 +703,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'invalid group_id');
     }
 
-    if (!ctx.getGroupAtAllRemain) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const data = await ctx.getGroupAtAllRemain(groupId);
@@ -752,9 +713,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   });
 
   h.registerAction('get_unidirectional_friend_list', async () => {
-    if (!ctx.getUnidirectionalFriendList) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const data = await ctx.getUnidirectionalFriendList();
@@ -771,9 +729,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'invalid longNick');
     }
 
-    if (!ctx.setSelfLongNick) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.setSelfLongNick(longNick);
@@ -795,9 +750,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const file = asString(params.file);
     if (!file) return failedResponse(RETCODE.BAD_REQUEST, 'file is required');
 
-    if (!ctx.setAvatar) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.setAvatar(file);
@@ -820,9 +772,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'invalid event_type');
     }
 
-    if (!ctx.setInputStatus) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.setInputStatus(userId, eventType);
@@ -841,9 +790,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
     const words = rawWords.map(w => String(w));
 
-    if (!ctx.translateEn2Zh) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const translated = await ctx.translateEn2Zh(words);
@@ -854,9 +800,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   });
 
   h.registerAction('get_clientkey', async () => {
-    if (!ctx.forceFetchClientKey) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not yet implemented');
-    }
     const clientKeyInfo = await ctx.forceFetchClientKey();
     if (!clientKeyInfo.clientKey) {
       return failedResponse(RETCODE.ACTION_FAILED, 'get clientkey error');
@@ -871,9 +814,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const picUrl = params.picUrl || params.pic_url || '';
     const jumpUrl = params.jumpUrl || params.jump_url || '';
 
-    if (!ctx.getMiniAppArk) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const data = await ctx.getMiniAppArk(
@@ -900,9 +840,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'missing required parameters');
     }
 
-    if (!ctx.clickInlineKeyboardButton) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       const data = await ctx.clickInlineKeyboardButton(
@@ -925,9 +862,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'invalid group_id');
     }
 
-    if (!ctx.sendGroupSign) {
-      return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
-    }
 
     try {
       await ctx.sendGroupSign(groupId);

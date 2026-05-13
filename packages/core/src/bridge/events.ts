@@ -27,6 +27,16 @@ export interface MessageElement {
   flash?: boolean;
   resId?: string;
   fileHash?: string;
+  // Server-side fingerprints carried from receive side so a forward can do a
+  // pure md5/sha1 fast-upload without re-downloading the original bytes.
+  // Set together with `noByteFallback: true` to make the upload modules throw
+  // instead of falling back to fetch(url).
+  md5Hex?: string;
+  sha1Hex?: string;
+  picFormat?: number;
+  videoFormat?: number;
+  voiceFormat?: number;
+  noByteFallback?: boolean;
   mediaNode?: {
     fileUuid?: string;
     storeId?: number;

@@ -24,7 +24,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const block = asBoolean(params.block, false);
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    if (!ctx.handleDeleteFriend) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.handleDeleteFriend(userId, block);
     return okResponse();
   });

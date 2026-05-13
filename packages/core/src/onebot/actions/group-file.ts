@@ -11,7 +11,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const folderId = asString(params.folder) || asString(params.folder_id) || '/';
     const uploadFile = asBoolean(params.upload_file, true);
     if (!groupId || !file) return failedResponse(RETCODE.BAD_REQUEST, 'group_id and file are required');
-    if (!ctx.uploadGroupFile) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const fileId = await ctx.uploadGroupFile(groupId, file, name, folderId, uploadFile);
     return okResponse({ file_id: fileId });
   });
@@ -22,7 +21,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const name = asString(params.name);
     const uploadFile = asBoolean(params.upload_file, true);
     if (!userId || !file) return failedResponse(RETCODE.BAD_REQUEST, 'user_id and file are required');
-    if (!ctx.uploadPrivateFile) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     const fileId = await ctx.uploadPrivateFile(userId, file, name, uploadFile);
     return okResponse({ file_id: fileId });
   });
@@ -34,7 +32,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !fileId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and file_id are required');
     }
-    if (!ctx.getGroupFileUrl) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     return okResponse({ url: await ctx.getGroupFileUrl(groupId, fileId, busId) });
   });
 
@@ -43,7 +40,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
     }
-    if (!ctx.getGroupFiles) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     return okResponse(await ctx.getGroupFiles(groupId, '/'));
   });
 
@@ -53,7 +49,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
     }
-    if (!ctx.getGroupFiles) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     return okResponse(await ctx.getGroupFiles(groupId, folderId));
   });
 
@@ -63,7 +58,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !fileId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and file_id are required');
     }
-    if (!ctx.deleteGroupFile) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.deleteGroupFile(groupId, fileId);
     return okResponse();
   });
@@ -76,7 +70,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !fileId || !parentDirectory || !targetDirectory) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id, file_id, parent_directory and target_directory are required');
     }
-    if (!ctx.moveGroupFile) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.moveGroupFile(groupId, fileId, parentDirectory, targetDirectory);
     return okResponse();
   });
@@ -88,7 +81,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !name) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and name are required');
     }
-    if (!ctx.createGroupFileFolder) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.createGroupFileFolder(groupId, name, parentId);
     return okResponse();
   });
@@ -99,7 +91,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !folderId) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id and folder_id are required');
     }
-    if (!ctx.deleteGroupFileFolder) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.deleteGroupFileFolder(groupId, folderId);
     return okResponse();
   });
@@ -111,7 +102,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId || !folderId || !newName) {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id, folder_id and new_folder_name are required');
     }
-    if (!ctx.renameGroupFileFolder) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     await ctx.renameGroupFileFolder(groupId, folderId, newName);
     return okResponse();
   });
@@ -123,7 +113,6 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!userId || !fileId || !fileHash) {
       return failedResponse(RETCODE.BAD_REQUEST, 'user_id, file_id and file_hash are required');
     }
-    if (!ctx.getPrivateFileUrl) return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     return okResponse({ url: await ctx.getPrivateFileUrl(userId, fileId, fileHash) });
   });
 }

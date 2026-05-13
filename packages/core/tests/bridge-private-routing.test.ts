@@ -3,7 +3,7 @@ import type { SendPacketResult } from '../src/protocol/packet-sender';
 import { protoDecode, protoEncode } from '../src/protobuf/decode';
 import { SendMessageRequestSchema, SendMessageResponseSchema } from '../src/bridge/proto/action';
 
-vi.mock('../src/bridge/builders/element-builder', () => ({
+vi.mock('../src/bridge/element-builder', () => ({
   buildSendElems: vi.fn(async () => [{ text: { str: 'stub media elem' } }]),
 }));
 

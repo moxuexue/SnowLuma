@@ -1,8 +1,8 @@
 // BridgeManager — manages per-UIN Bridge sessions.
-// Wires NtqqHandler packets to appropriate Bridge instances.
+// onPacket() is the single entry point for parsed hook packets;
+// HookManager wires it as the default packet sink for every HookSession.
 // Port of src/bridge/include/bridge/manager.h + src/bridge/src/manager.cpp
 
-import type { NtqqHandler } from '../protocol/ntqq-handler';
 import type { PacketInfo } from '../protocol/types';
 import { Bridge } from './bridge';
 import { IdentityService } from './identity-service';
@@ -30,10 +30,6 @@ export class BridgeManager {
 
   setSessionStartedCallback(cb: SessionStartedCallback): void { this.onSessionStarted_ = cb; }
   setSessionClosedCallback(cb: SessionClosedCallback): void { this.onSessionClosed_ = cb; }
-
-  bind(ntqq: NtqqHandler): void {
-    ntqq.registerCmdAll((pkt: PacketInfo) => this.onPacket(pkt));
-  }
 
   onPidDisconnected(pid: number): void {
     this.pidPacketClients_.delete(pid);
@@ -76,7 +72,7 @@ export class BridgeManager {
     }
   }
 
-  private onPacket(pkt: PacketInfo): void {
+  onPacket(pkt: PacketInfo): void {
     if (!pkt.uin || !BridgeManager.isRealUin(pkt.uin)) return;
     const uin = pkt.uin;
 
