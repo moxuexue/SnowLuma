@@ -388,16 +388,36 @@ export async function getForwardMessage(
   const nodes = await ref.bridge.fetchForwardNodes(resId);
   const results: JsonObject[] = [];
   for (const node of nodes) {
-    results.push({
-      type: 'node' as any,
-      data: {
-        user_id: node.userUin as any,
-        nickname: node.nickname as any,
-        uin: String(node.userUin) as any,
-        name: node.nickname as any,
-        content: await elementsToOneBotSegments(node.elements, false, node.userUin) as any,
-      } as any,
-    } as JsonObject);
+    const isGroup = node.messageType === 'group' || (node.groupId !== undefined && node.groupId > 0);
+    const sessionId = isGroup ? (node.groupId ?? 0) : node.userUin;
+    const segments = await elementsToOneBotSegments(node.elements, isGroup, sessionId);
+
+    const sender: JsonObject = {
+      user_id: node.userUin,
+      nickname: node.nickname,
+    };
+    if (isGroup) sender.card = node.senderCard ?? '';
+
+    const message: JsonObject = {
+      self_id: ref.selfId,
+      user_id: node.userUin,
+      time: node.time ?? Math.floor(Date.now() / 1000),
+      message_id: node.msgId ?? 0,
+      message_seq: node.msgSeq ?? node.msgId ?? 0,
+      real_id: node.msgId ?? 0,
+      message_type: isGroup ? 'group' : 'private',
+      sender,
+      raw_message: '',
+      font: 14,
+      sub_type: isGroup ? 'normal' : 'friend',
+      message: segments as unknown as JsonValue,
+      message_format: 'array',
+      post_type: 'message',
+    };
+    if (isGroup && node.groupId !== undefined && node.groupId > 0) {
+      message.group_id = node.groupId;
+    }
+    results.push(message);
   }
   return results;
 }
@@ -503,12 +523,25 @@ async function parseForwardNodes(
       if (!event) throw new Error(`forward node message_id not found: ${messageId}`);
 
       const eventSender = asJsonObject(event.sender) ?? {};
+      const senderCard = eventSender.card !== undefined ? String(eventSender.card) : undefined;
       const nickname = String(eventSender.card ?? eventSender.nickname ?? nodeData.nickname ?? nodeData.name ?? '');
       const userUin = toPositiveInt(event.user_id);
       const content = (event.message ?? event.raw_message ?? '') as JsonValue;
       const elements = await parseMessage(content, false);
       if (userUin > 0 && elements.length > 0) {
-        nodes.push({ userUin, nickname: nickname || String(userUin), elements });
+        const messageType = event.message_type === 'group' ? 'group' : 'private';
+        const groupIdValue = toPositiveInt(event.group_id);
+        nodes.push({
+          userUin,
+          nickname: nickname || String(userUin),
+          elements,
+          time: typeof event.time === 'number' ? event.time : toPositiveInt(event.time),
+          msgId: toPositiveInt(event.message_id),
+          msgSeq: toPositiveInt(event.message_seq),
+          groupId: groupIdValue > 0 ? groupIdValue : undefined,
+          senderCard,
+          messageType,
+        });
       }
       continue;
     }

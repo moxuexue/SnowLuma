@@ -11,6 +11,11 @@ const distDir = path.resolve(repoRoot, 'dist');
 const runtimeDir = path.resolve(repoRoot, 'packages', 'runtime');
 const nativeDir = path.resolve(runtimeDir, 'native');
 
+// Single source of truth for the user-facing app version: monorepo root package.json.
+const rootPkg = JSON.parse(
+  fs.readFileSync(path.resolve(repoRoot, 'package.json'), 'utf-8'),
+) as { version: string };
+
 // vite-plugin-cp consumes globs through globby; on Windows we must use POSIX-style separators.
 const toPosix = (p: string) => p.replace(/\\/g, '/');
 
@@ -119,7 +124,8 @@ const BaseConfig = (source_map: boolean = false) => defineConfig({
     emptyOutDir: true
   },
   define: {
-    __BUILD_WEBUI__: process.env.BUILD_WEBUI === 'true'
+    __BUILD_WEBUI__: process.env.BUILD_WEBUI === 'true',
+    __APP_VERSION__: JSON.stringify(rootPkg.version)
   }
 });
 

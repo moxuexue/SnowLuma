@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
-import { HookManager } from '../src/hook/hook-manager';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { HookManager, shouldAutoLoadPid } from '../src/hook/hook-manager';
 import { PipeWatcher } from '../src/hook/pipe-watcher';
 import type { ManualMapHandle } from '../src/hook/injector';
 import type { BridgeManager } from '../src/bridge/manager';
 import type { QqHookClient } from '../src/hook/qq-hook-client';
+import { createLogger } from '../src/utils/logger';
 
 const DUMMY_HANDLE: ManualMapHandle = { base: 0n, entry: 0n, exceptionTable: 0n, size: 0 };
 const flush = () => new Promise<void>(r => setImmediate(r));
@@ -100,5 +104,79 @@ describe('HookManager.autoLoadOnDiscovery', () => {
     expect(ctx.inject).toHaveBeenCalledTimes(2);
 
     ctx.manager.dispose();
+  });
+});
+
+// `shouldAutoLoadPid` reads /proc/<pid>/cmdline directly, so we point
+// it at a temporary directory that mimics the procfs layout. This lets
+// the tests run on macOS / CI without a live Linux QQ process.
+describe('shouldAutoLoadPid', () => {
+  let tmpProc: string;
+  const originalReadFileSync = fs.readFileSync;
+  const log = createLogger('test');
+  const originalPlatform = process.platform;
+  const originalAutoLoadAll = process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL;
+
+  beforeEach(() => {
+    tmpProc = fs.mkdtempSync(path.join(os.tmpdir(), 'hookmgr-proc-'));
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    delete process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL;
+    // Redirect readFileSync('/proc/<pid>/cmdline') to the tmp dir.
+    (fs.readFileSync as unknown as typeof fs.readFileSync) = ((p: string, ...rest: unknown[]) => {
+      const match = /^\/proc\/(\d+)\/cmdline$/.exec(p);
+      if (match) {
+        return originalReadFileSync(path.join(tmpProc, match[1], 'cmdline'), ...(rest as [BufferEncoding]));
+      }
+      return originalReadFileSync(p, ...(rest as [BufferEncoding]));
+    }) as typeof fs.readFileSync;
+  });
+
+  afterEach(() => {
+    (fs.readFileSync as unknown as typeof fs.readFileSync) = originalReadFileSync;
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    if (originalAutoLoadAll === undefined) delete process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL;
+    else process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL = originalAutoLoadAll;
+    fs.rmSync(tmpProc, { recursive: true, force: true });
+  });
+
+  function writeCmdline(pid: number, args: string[]): void {
+    const dir = path.join(tmpProc, String(pid));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'cmdline'), args.join('\0') + '\0');
+  }
+
+  it('allows the QQ main process (no --type=)', () => {
+    writeCmdline(50, ['qq', '--no-sandbox']);
+    expect(shouldAutoLoadPid(50, log)).toBe(true);
+  });
+
+  it('rejects Electron zygotes', () => {
+    writeCmdline(59, ['/opt/QQ/qq', '--type=zygote', '--no-zygote-sandbox', '--no-sandbox']);
+    expect(shouldAutoLoadPid(59, log)).toBe(false);
+  });
+
+  it('rejects renderer/gpu/utility children', () => {
+    writeCmdline(70, ['/opt/QQ/qq', '--type=renderer']);
+    writeCmdline(71, ['/opt/QQ/qq', '--type=gpu-process']);
+    writeCmdline(72, ['/opt/QQ/qq', '--type=utility', '--utility-sub-type=network.mojom.NetworkService']);
+    expect(shouldAutoLoadPid(70, log)).toBe(false);
+    expect(shouldAutoLoadPid(71, log)).toBe(false);
+    expect(shouldAutoLoadPid(72, log)).toBe(false);
+  });
+
+  it('allows everything if SNOWLUMA_HOOK_AUTOLOAD_ALL=1 (escape hatch)', () => {
+    writeCmdline(59, ['/opt/QQ/qq', '--type=zygote']);
+    process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL = '1';
+    expect(shouldAutoLoadPid(59, log)).toBe(true);
+  });
+
+  it('allows on non-linux platforms (filter is a Linux-only workaround)', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    // No cmdline file needed — we return true before touching procfs.
+    expect(shouldAutoLoadPid(59, log)).toBe(true);
+  });
+
+  it('allows when /proc is unreadable (dead PID, permission issue)', () => {
+    expect(shouldAutoLoadPid(99999, log)).toBe(true);
   });
 });

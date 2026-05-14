@@ -1,5 +1,6 @@
 export const APP_NAME = 'SnowLuma';
-export const APP_VERSION = '0.1.0';
+// Injected at build time by Vite from the monorepo root package.json.
+export const APP_VERSION = __APP_VERSION__;
 
 export interface QQInfo {
   uin: string;

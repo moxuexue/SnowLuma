@@ -12,10 +12,13 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     return okResponse({ online, good: online });
   });
 
+  // __APP_VERSION__ is injected by Vite from the monorepo root package.json;
+  // it's undefined under vitest (no define plugin), so fall back to 'dev'.
+  const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
   h.registerAction('get_version_info', async () => {
     return okResponse({
       app_name: 'SnowLuma',
-      app_version: '0.1.0-node',
+      app_version: `${appVersion}-node`,
       protocol_version: 'v11',
     });
   });

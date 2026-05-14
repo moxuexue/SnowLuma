@@ -110,6 +110,12 @@ export async function uploadForwardNodes(bridge: Bridge, nodes: ForwardNodePaylo
     userUin: node.userUin,
     nickname: node.nickname,
     elements: [...node.elements],
+    time: node.time,
+    msgId: node.msgId,
+    msgSeq: node.msgSeq,
+    groupId: node.groupId ?? groupId,
+    senderCard: node.senderCard,
+    messageType: node.messageType ?? (groupId ? 'group' : 'private'),
   })));
 
   return resId;
@@ -118,7 +124,17 @@ export async function uploadForwardNodes(bridge: Bridge, nodes: ForwardNodePaylo
 export async function fetchForwardNodes(bridge: Bridge, resId: string): Promise<ForwardNodePayload[]> {
   const cached = forwardResCache.get(resId);
   if (cached) {
-    return cached.map(node => ({ userUin: node.userUin, nickname: node.nickname, elements: [...node.elements] }));
+    return cached.map(node => ({
+      userUin: node.userUin,
+      nickname: node.nickname,
+      elements: [...node.elements],
+      time: node.time,
+      msgId: node.msgId,
+      msgSeq: node.msgSeq,
+      groupId: node.groupId,
+      senderCard: node.senderCard,
+      messageType: node.messageType,
+    }));
   }
 
   const selfUid = await resolveSelfUid(bridge);
@@ -174,24 +190,48 @@ export async function fetchForwardNodes(bridge: Bridge, resId: string): Promise<
         userUin: event.senderUin,
         nickname: event.senderCard || event.senderNick,
         elements: event.elements,
+        time: event.time,
+        msgId: event.msgId,
+        msgSeq: event.msgSeq,
+        groupId: event.groupId,
+        senderCard: event.senderCard,
+        messageType: 'group',
       });
     } else if (event.kind === 'friend_message') {
       nodes.push({
         userUin: event.senderUin,
         nickname: event.senderNick,
         elements: event.elements,
+        time: event.time,
+        msgId: event.msgId,
+        msgSeq: event.msgSeq,
+        messageType: 'private',
       });
     } else {
       nodes.push({
         userUin: event.senderUin,
         nickname: event.senderNick,
         elements: event.elements,
+        time: event.time,
+        msgSeq: event.msgSeq,
+        groupId: event.groupId,
+        messageType: 'private',
       });
     }
   }
 
   if (nodes.length > 0) {
-    forwardResCache.set(resId, nodes.map(node => ({ userUin: node.userUin, nickname: node.nickname, elements: [...node.elements] })));
+    forwardResCache.set(resId, nodes.map(node => ({
+      userUin: node.userUin,
+      nickname: node.nickname,
+      elements: [...node.elements],
+      time: node.time,
+      msgId: node.msgId,
+      msgSeq: node.msgSeq,
+      groupId: node.groupId,
+      senderCard: node.senderCard,
+      messageType: node.messageType,
+    })));
   }
   return nodes;
 }

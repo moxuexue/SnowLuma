@@ -1,3 +1,4 @@
+import fs from 'fs';
 import type { BridgeManager } from '../bridge/manager';
 import type { PacketSink } from '../protocol/types';
 import { createLogger, type Logger } from '../utils/logger';
@@ -169,7 +170,7 @@ export class HookManager {
       // injected without a human clicking "Load" in WebUI. Fire-and-forget:
       // failures are already captured inside loadInternal and surfaced via
       // the session's status field.
-      if (this.autoLoadOnDiscovery) {
+      if (this.autoLoadOnDiscovery && shouldAutoLoadPid(info.pid, this.log)) {
         void session.load().catch((err) => {
           this.log.warn('auto-load failed: PID=%d err=%s', info.pid, errMsg(err));
         });
@@ -242,4 +243,40 @@ function defaultProcessName(): string {
 
 function errMsg(value: unknown): string {
   return value instanceof Error ? value.message : String(value);
+}
+
+/**
+ * Filter for auto-load only. Returns false for Linux Electron child
+ * processes (zygote/renderer/gpu/utility), which the native enumerator
+ * mis-classifies as "main QQ" because their cmdline contains "qq" and
+ * they transiently inherit wrapper.node via fork copy-on-write.
+ *
+ * Injecting into a zygote spawns the hook's resolver thread inside it;
+ * every renderer Electron later forks then inherits that thread + the
+ * partially-init'd hook state, which breaks QQ's IPC and login UI.
+ *
+ * Manual loadProcess() bypasses this gate — the operator is responsible
+ * for picking the right PID from WebUI.
+ */
+export function shouldAutoLoadPid(pid: number, log: Logger): boolean {
+  if (process.platform !== 'linux') return true;
+  // Escape hatch: operators who explicitly want auto-load on every
+  // enumerated PID can set this to opt out of the filter.
+  if (process.env.SNOWLUMA_HOOK_AUTOLOAD_ALL === '1') return true;
+
+  let cmdline: string;
+  try {
+    cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+  } catch {
+    // Can't read cmdline (process gone, permission, etc.) — let the
+    // existing load() path handle it; if the process is dead the load
+    // will fail with a clear error.
+    return true;
+  }
+  if (cmdline.includes('--type=')) {
+    const type = (/--type=([^\0\s]+)/.exec(cmdline)?.[1]) ?? 'unknown';
+    log.info('auto-load skip: PID=%d is an Electron child process (--type=%s)', pid, type);
+    return false;
+  }
+  return true;
 }

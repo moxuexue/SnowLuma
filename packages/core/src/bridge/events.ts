@@ -66,6 +66,14 @@ export interface ForwardNodePayload {
   userUin: number;
   nickname: string;
   elements: MessageElement[];
+  // Optional context preserved when known (download path or upload-via-id),
+  // so `get_forward_msg` can emit OneBot11-compatible OB11Message objects.
+  time?: number;
+  msgId?: number;
+  msgSeq?: number;
+  groupId?: number;
+  senderCard?: string;
+  messageType?: 'group' | 'private';
 }
 
 export interface QQEvent {
