@@ -1,4 +1,4 @@
-import type { Bridge } from '../../bridge/bridge';
+import type { BridgeInterface } from '../../bridge/bridge-interface';
 import type { ForwardNodePayload, MessageElement } from '../../bridge/events';
 import { createLogger } from '../../utils/logger';
 import type { MessageSendResult } from '../api-handler';
@@ -63,7 +63,7 @@ export async function getFriendMsgHistory(
     .map(sanitizeMessageEventForApi);
 }
 
-export async function deleteMessage(bridge: Bridge, meta: MessageMeta): Promise<void> {
+export async function deleteMessage(bridge: BridgeInterface, meta: MessageMeta): Promise<void> {
   if (meta.isGroup) {
     await bridge.recallGroupMessage(meta.targetId, meta.sequence);
   } else {
@@ -78,7 +78,7 @@ export async function deleteMessage(bridge: Bridge, meta: MessageMeta): Promise<
 }
 
 export async function setEssenceMessage(
-  bridge: Bridge,
+  bridge: BridgeInterface,
   messageStore: MessageStore,
   messageId: number,
   enable: boolean,
@@ -180,14 +180,23 @@ export async function sendGroupMessage(
   return { messageId };
 }
 
+export interface ForwardPreviewMeta {
+  source?: string;
+  summary?: string;
+  prompt?: string;
+  news?: Array<{ text: string }>;
+}
+
 export async function sendGroupForwardMessage(
   ref: OneBotInstanceContext,
   groupId: number,
   messages: JsonValue,
+  meta?: ForwardPreviewMeta,
 ): Promise<{ messageId: number; forwardId: string }> {
   const nodes = await parseForwardNodes(ref, messages);
   const forwardId = await ref.bridge.uploadForwardNodes(nodes, groupId);
-  const receipt = await ref.bridge.sendGroupMessage(groupId, [{ type: 'forward', resId: forwardId }]);
+  const previewElement = buildForwardPreviewElement(forwardId, nodes, true, meta);
+  const receipt = await ref.bridge.sendGroupMessage(groupId, [previewElement]);
   const messageId = hashMessageIdInt32(receipt.sequence, groupId, GROUP_MESSAGE_EVENT);
 
   ref.cacheMessageMeta(messageId, {
@@ -207,10 +216,12 @@ export async function sendPrivateForwardMessage(
   ref: OneBotInstanceContext,
   userId: number,
   messages: JsonValue,
+  meta?: ForwardPreviewMeta,
 ): Promise<{ messageId: number; forwardId: string }> {
   const nodes = await parseForwardNodes(ref, messages);
   const forwardId = await ref.bridge.uploadForwardNodes(nodes);
-  const receipt = await ref.bridge.sendPrivateMessage(userId, [{ type: 'forward', resId: forwardId }]);
+  const previewElement = buildForwardPreviewElement(forwardId, nodes, false, meta);
+  const receipt = await ref.bridge.sendPrivateMessage(userId, [previewElement]);
   const messageId = hashMessageIdInt32(receipt.sequence, userId, PRIVATE_MESSAGE_EVENT);
 
   ref.cacheMessageMeta(messageId, {
@@ -561,6 +572,88 @@ async function parseForwardNodes(
     throw new Error('forward node list is empty');
   }
   return nodes;
+}
+
+// Per-element preview string for the forward bubble's `news` lines.
+// Mirrors NapCat's `PacketMsg.toPreview()` mapping; keeps text trim short
+// so a chain of segments doesn't blow past the bubble's 80-char display.
+function elementPreview(element: MessageElement): string {
+  switch (element.type) {
+    case 'text': {
+      const t = element.text ?? '';
+      return t.length > 40 ? `${t.slice(0, 40)}…` : t;
+    }
+    case 'at': return element.text?.trim() || '@';
+    case 'face': return '[表情]';
+    case 'mface': return element.text ? `[${element.text}]` : '[表情]';
+    case 'image': return '[图片]';
+    case 'record': return '[语音]';
+    case 'video': return '[视频]';
+    case 'file': return element.fileName ? `[文件:${element.fileName}]` : '[文件]';
+    case 'reply': return '';
+    case 'json': return '[JSON消息]';
+    case 'xml': return '[XML消息]';
+    case 'markdown': return '[Markdown]';
+    case 'forward': return '[聊天记录]';
+    case 'poke': return '[戳一戳]';
+    default: return '';
+  }
+}
+
+function buildNewsFromNodes(nodes: ForwardNodePayload[]): Array<{ text: string }> {
+  // Match NapCat ForwardMsgBuilder: each line is "<nickname>: <preview>".
+  // Cap to the first 4 lines — that's what QQ's bubble can actually render
+  // before it truncates; anything beyond is silently dropped by the client.
+  const lines: Array<{ text: string }> = [];
+  for (const node of nodes) {
+    const preview = node.elements.map(elementPreview).filter(Boolean).join(' ').trim();
+    const nickname = node.nickname || String(node.userUin);
+    lines.push({ text: `${nickname}: ${preview || '[消息]'}` });
+    if (lines.length >= 4) break;
+  }
+  return lines;
+}
+
+function deriveForwardSource(nodes: ForwardNodePayload[], isGroup: boolean): string {
+  if (nodes.length === 0) return '聊天记录';
+  if (isGroup) return '群聊的聊天记录';
+  // Private chat: stitch up to 4 distinct sender nicks, NapCat-style.
+  const seen = new Set<string>();
+  const nicks: string[] = [];
+  for (const node of nodes) {
+    const nick = (node.nickname || String(node.userUin)).trim();
+    if (!nick || seen.has(nick)) continue;
+    seen.add(nick);
+    nicks.push(nick);
+    if (nicks.length >= 4) break;
+  }
+  return nicks.length > 0 ? `${nicks.join('和')}的聊天记录` : '聊天记录';
+}
+
+function buildForwardPreviewElement(
+  resId: string,
+  nodes: ForwardNodePayload[],
+  isGroup: boolean,
+  meta: ForwardPreviewMeta | undefined,
+): MessageElement {
+  const news = meta?.news && meta.news.length > 0 ? meta.news : buildNewsFromNodes(nodes);
+  const source = meta?.source && meta.source.length > 0
+    ? meta.source
+    : deriveForwardSource(nodes, isGroup);
+  const summary = meta?.summary && meta.summary.length > 0
+    ? meta.summary
+    : `查看${nodes.length}条转发消息`;
+  const prompt = meta?.prompt && meta.prompt.length > 0 ? meta.prompt : '[聊天记录]';
+
+  return {
+    type: 'forward',
+    resId,
+    forwardSource: source,
+    forwardSummary: summary,
+    forwardPrompt: prompt,
+    forwardNews: news,
+    forwardTSum: nodes.length,
+  };
 }
 
 function asJsonObject(value: JsonValue | undefined): JsonObject | null {

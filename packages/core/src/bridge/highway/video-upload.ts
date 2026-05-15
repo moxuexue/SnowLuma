@@ -460,10 +460,14 @@ export async function uploadVideoMsgInfo(
             fileHash: video.md5Hex,
             fileSha1: video.sha1Hex,
             fileName: 'nya.mp4',
-            type: { type: 2, picFormat: 0, videoFormat: video.videoFormat, voiceFormat: 0 },
-            height: video.height,
-            width: video.width,
-            time: video.duration,
+            // NapCat sends type.videoFormat=0 and width/height/time=0
+            // for the main video sub-file (only the thumb carries
+            // dimensions). The QQ NT server treats non-zero values
+            // here as a schema mismatch on c2c sends.
+            type: { type: 2, picFormat: 0, videoFormat: 0, voiceFormat: 0 },
+            height: 0,
+            width: 0,
+            time: 0,
             original: 0,
           },
           subFileType: 0,

@@ -115,13 +115,59 @@ function makeMarkdownElem(element: MessageElement): ProtoElem {
   };
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function makeForwardElem(element: MessageElement): ProtoElem {
   const resId = (element.resId ?? '').trim();
   if (!resId) {
     throw new Error('forward resId is required');
   }
 
-  const xml = `<?xml version="1.0" encoding="utf-8"?><msg templateID="1" action="viewMultiMsg" serviceID="35" brief="[聊天记录]" m_resid="${resId}" m_fileName="${resId}" actionData="${resId}" tSum="2" sourceMsgId="0" flag="3" adverSign="0" multiMsgFlag="0"><item layout="1"><title size="34" color="#000000">聊天记录</title><title size="26" color="#777777">查看转发消息</title><summary size="26" color="#808080">查看转发消息</summary></item><source name="" icon="" action="" appid="-1"/></msg>`;
+  // Multi-msg preview bubble — modelled on the go-cqhttp / NapCat XML.
+  // `source` becomes the bold header (e.g. "群聊的聊天记录"), `news`
+  // entries become per-line previews ("nick: text"), `summary` is the
+  // grey footer ("查看 N 条转发消息"), `prompt` is the chat-list brief.
+  const source = element.forwardSource && element.forwardSource.length > 0
+    ? element.forwardSource
+    : '聊天记录';
+  const summary = element.forwardSummary && element.forwardSummary.length > 0
+    ? element.forwardSummary
+    : '查看转发消息';
+  const prompt = element.forwardPrompt && element.forwardPrompt.length > 0
+    ? element.forwardPrompt
+    : '[聊天记录]';
+  const news = Array.isArray(element.forwardNews) ? element.forwardNews : [];
+  const tSum = element.forwardTSum && element.forwardTSum > 0
+    ? element.forwardTSum
+    : Math.max(news.length, 1);
+
+  const newsTitles = news
+    .map(n => `<title size="26" color="#777777">${escapeXml(n.text ?? '')}</title>`)
+    .join('');
+
+  const resIdAttr = escapeXml(resId);
+  const xml =
+    `<?xml version="1.0" encoding="utf-8"?>` +
+    `<msg templateID="1" action="viewMultiMsg" serviceID="35"` +
+    ` brief="${escapeXml(prompt)}"` +
+    ` m_resid="${resIdAttr}" m_fileName="${resIdAttr}" actionData="${resIdAttr}"` +
+    ` tSum="${tSum}" sourceMsgId="0" flag="3" adverSign="0" multiMsgFlag="0">` +
+    `<item layout="1">` +
+    `<title size="34" color="#000000">${escapeXml(source)}</title>` +
+    newsTitles +
+    `<hr hidden="false" style="0"/>` +
+    `<summary size="26" color="#808080">${escapeXml(summary)}</summary>` +
+    `</item>` +
+    `<source name="${escapeXml(source)}" icon="" action="" appid="-1"/>` +
+    `</msg>`;
+
   const encodedXml = new TextEncoder().encode(xml);
   const payload = new Uint8Array(encodedXml.length + 1);
   payload[0] = 0x00;

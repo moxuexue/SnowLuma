@@ -222,7 +222,18 @@ export interface GroupNoticeParams extends GroupIdParams {
   confirm_required?: number;
 }
 
-export interface ForwardMessageParams extends JsonObject {
+export interface ForwardPreviewParams {
+  // Header above the preview ("群聊的聊天记录"). Default: "聊天记录" / nicks.
+  source?: string;
+  // Per-line preview entries ("nick: text"). Default: derived from nodes.
+  news?: Array<{ text: string }>;
+  // Grey footer ("查看 N 条转发消息"). Default: "查看 N 条转发消息".
+  summary?: string;
+  // Chat-list brief ("[聊天记录]"). Default: "[聊天记录]".
+  prompt?: string;
+}
+
+export interface ForwardMessageParams extends JsonObject, ForwardPreviewParams {
   message_type?: 'private' | 'group' | string;
   user_id?: number;
   group_id?: number;
@@ -230,12 +241,12 @@ export interface ForwardMessageParams extends JsonObject {
   messages?: JsonValue;
 }
 
-export interface GroupForwardMessageParams extends GroupIdParams {
+export interface GroupForwardMessageParams extends GroupIdParams, ForwardPreviewParams {
   message?: JsonValue;
   messages?: JsonValue;
 }
 
-export interface PrivateForwardMessageParams extends UserIdParams {
+export interface PrivateForwardMessageParams extends UserIdParams, ForwardPreviewParams {
   message?: JsonValue;
   messages?: JsonValue;
 }

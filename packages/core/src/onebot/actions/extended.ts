@@ -1,6 +1,33 @@
 import type { ApiHandler, ApiActionContext } from '../api-handler';
 import { asMessage, asNumber, asString, asBoolean } from '../api-handler';
+import type { ForwardPreviewMeta } from '../modules/message-actions';
 import { RETCODE, failedResponse, okResponse } from '../types';
+
+/**
+ * Pull NapCat-compatible forward preview overrides off a send_*_forward_msg
+ * payload. All four fields are optional — when omitted, the module layer
+ * derives sensible defaults from the actual node list.
+ */
+function readForwardPreviewMeta(params: Record<string, unknown>): ForwardPreviewMeta | undefined {
+  const source = asString(params.source) || undefined;
+  const summary = asString(params.summary) || undefined;
+  const prompt = asString(params.prompt) || undefined;
+  let news: Array<{ text: string }> | undefined;
+  if (Array.isArray(params.news)) {
+    const collected: Array<{ text: string }> = [];
+    for (const item of params.news) {
+      if (typeof item === 'string') {
+        collected.push({ text: item });
+      } else if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const text = asString((item as Record<string, unknown>).text);
+        if (text) collected.push({ text });
+      }
+    }
+    if (collected.length > 0) news = collected;
+  }
+  if (!source && !summary && !prompt && !news) return undefined;
+  return { source, summary, prompt, news };
+}
 
 export function register(h: ApiHandler, ctx: ApiActionContext): void {
   // --- Likes & Pokes ---
@@ -9,7 +36,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const times = asNumber(params.times) || 1;
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    await ctx.sendLike(userId, times);
+    await ctx.bridge.sendLike(userId, times);
     return okResponse();
   });
 
@@ -67,9 +94,9 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const essenceDataAll = await ctx.getGroupEssenceAll(groupId);
+      const essenceDataAll = await ctx.bridge.getGroupEssenceAll(groupId);
 
-      const allMsgs = essenceDataAll.flatMap(res => res.data?.msg_list || []);
+      const allMsgs = essenceDataAll.flatMap((res: any) => res.data?.msg_list || []);
 
       return okResponse(allMsgs);
     } catch (e) {
@@ -98,7 +125,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
       return failedResponse(RETCODE.BAD_REQUEST, 'group_id does not match message session');
     }
 
-    await ctx.setGroupReaction(meta.targetId, meta.sequence, code, isSet);
+    await ctx.bridge.setGroupReaction(meta.targetId, meta.sequence, code, isSet);
     return okResponse();
   });
 
@@ -141,7 +168,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
 
 
-    await ctx.markGroupMsgAsRead(groupId, meta.sequence);
+    await ctx.bridge.markGroupMsgAsRead(groupId, meta.sequence);
     return okResponse();
   });
 
@@ -164,7 +191,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
 
 
-    await ctx.markPrivateMsgAsRead(userId, meta.sequence);
+    await ctx.bridge.markPrivateMsgAsRead(userId, meta.sequence);
     return okResponse();
   });
 
@@ -184,9 +211,9 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     }
 
     if (meta.isGroup) {
-      await ctx.markGroupMsgAsRead(targetId, meta.sequence);
+      await ctx.bridge.markGroupMsgAsRead(targetId, meta.sequence);
     } else {
-      await ctx.markPrivateMsgAsRead(targetId, meta.sequence);
+      await ctx.bridge.markPrivateMsgAsRead(targetId, meta.sequence);
     }
     return okResponse();
   });
@@ -231,7 +258,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
         confirm_required: params.confirm_required !== undefined ? Number(params.confirm_required) : 1,
       };
 
-      await ctx.sendGroupNotice(groupId, content, options);
+      await ctx.bridge.sendGroupNotice(groupId, content, options);
       return okResponse();
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -244,7 +271,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const notices = await ctx.getGroupNotice(groupId);
+      const notices = await ctx.bridge.getGroupNotice(groupId);
       return okResponse(notices);
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -261,7 +288,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const success = await ctx.deleteGroupNotice(groupId, fid);
+      const success = await ctx.bridge.deleteGroupNotice(groupId, fid);
       if (success) {
         return okResponse();
       } else {
@@ -301,18 +328,19 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     const userId = asNumber(params.user_id);
     const messages = asMessage(params.messages ?? params.message);
+    const meta = readForwardPreviewMeta(params);
 
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
 
     if ((messageType === 'group' || groupId > 0) && ctx.sendGroupForwardMsg) {
       if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
-      const result = await ctx.sendGroupForwardMsg(groupId, messages);
+      const result = await ctx.sendGroupForwardMsg(groupId, messages, meta);
       return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
     }
 
     if ((messageType === 'private' || userId > 0) && ctx.sendPrivateForwardMsg) {
       if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-      const result = await ctx.sendPrivateForwardMsg(userId, messages);
+      const result = await ctx.sendPrivateForwardMsg(userId, messages, meta);
       return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
     }
 
@@ -326,7 +354,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
 
-    const result = await ctx.sendGroupForwardMsg(groupId, messages);
+    const result = await ctx.sendGroupForwardMsg(groupId, messages, readForwardPreviewMeta(params));
     return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
   });
 
@@ -336,7 +364,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
     if (messages === undefined) return failedResponse(RETCODE.BAD_REQUEST, 'message/messages is required');
 
-    const result = await ctx.sendPrivateForwardMsg(userId, messages);
+    const result = await ctx.sendPrivateForwardMsg(userId, messages, readForwardPreviewMeta(params));
     return okResponse({ message_id: result.messageId, res_id: result.forwardId, forward_id: result.forwardId });
   });
 
@@ -399,7 +427,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const cookies = await ctx.getCookiesStr(domain);
+      const cookies = await ctx.bridge.getCookiesStr(domain);
       return okResponse({ cookies });
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -409,7 +437,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_csrf_token', async () => {
 
     try {
-      const token = await ctx.getCsrfToken();
+      const token = await ctx.bridge.getCsrfToken();
       return okResponse({ token });
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -421,7 +449,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const creds = await ctx.getCredentials(domain);
+      const creds = await ctx.bridge.getCredentials(domain);
       return okResponse(creds);
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -452,7 +480,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const userId = asNumber(params.user_id);
     const remark = asString(params.remark) ?? '';
     if (!userId) return failedResponse(RETCODE.BAD_REQUEST, 'user_id is required');
-    await ctx.setFriendRemark(userId, remark);
+    await ctx.bridge.setFriendRemark(userId, remark);
     return okResponse();
   });
 
@@ -460,7 +488,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     const groupId = asNumber(params.group_id);
     const remark = asString(params.remark) ?? '';
     if (!groupId) return failedResponse(RETCODE.BAD_REQUEST, 'group_id is required');
-    await ctx.setGroupRemark(groupId, remark);
+    await ctx.bridge.setGroupRemark(groupId, remark);
     return okResponse();
   });
 
@@ -542,7 +570,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.setProfile(nickname, personalNote);
+      await ctx.bridge.setProfile(nickname, personalNote);
       return okResponse();
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -562,7 +590,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.setOnlineStatus(status, extStatus, batteryStatus);
+      await ctx.bridge.setOnlineStatus(status, extStatus, batteryStatus);
       return okResponse();
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -625,7 +653,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('fetch_custom_face', async (params) => {
     const count = asNumber(params.count) || 10;
     try {
-      const urls = await ctx.fetchCustomFace(count);
+      const urls = await ctx.bridge.fetchCustomFace(count);
       return okResponse(urls);
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -639,7 +667,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     try {
       const meta = ctx.getMessageMeta(messageId);
       if (!meta?.isGroup || !meta?.sequence) return failedResponse(RETCODE.BAD_REQUEST, 'message not found or not a group message');
-      const result = await ctx.getEmojiLikes(meta.targetId, meta.sequence, emojiId);
+      const result = await ctx.bridge.getEmojiLikes(meta.targetId, meta.sequence, emojiId);
       return okResponse({ emoji_like_list: result.users.map(u => ({ user_id: String(u.uin), nick_name: '' })) });
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -656,7 +684,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
     try {
       const meta = ctx.getMessageMeta(messageId);
       if (!meta?.isGroup || !meta?.sequence) return failedResponse(RETCODE.BAD_REQUEST, 'message not found or not a group message');
-      const result = await ctx.getEmojiLikes(meta.targetId, meta.sequence, emojiId, emojiType, count, cookie);
+      const result = await ctx.bridge.getEmojiLikes(meta.targetId, meta.sequence, emojiId, emojiType, count, cookie);
       return okResponse({
         result: 0,
         errMsg: '',
@@ -705,7 +733,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const data = await ctx.getGroupAtAllRemain(groupId);
+      const data = await ctx.bridge.getGroupAtAllRemain(groupId);
       return okResponse(data);
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -715,7 +743,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   h.registerAction('get_unidirectional_friend_list', async () => {
 
     try {
-      const data = await ctx.getUnidirectionalFriendList();
+      const data = await ctx.bridge.getUnidirectionalFriendList();
       return okResponse(data);
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -731,7 +759,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.setSelfLongNick(longNick);
+      await ctx.bridge.setSelfLongNick(longNick);
       return okResponse({});
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -752,7 +780,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.setAvatar(file);
+      await ctx.bridge.setAvatar(file);
       return okResponse();
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -774,7 +802,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.setInputStatus(userId, eventType);
+      await ctx.bridge.setInputStatus(userId, eventType);
       return okResponse({});
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -792,7 +820,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const translated = await ctx.translateEn2Zh(words);
+      const translated = await ctx.bridge.translateEn2Zh(words);
       return okResponse({ words: translated });
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));
@@ -800,11 +828,11 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
   });
 
   h.registerAction('get_clientkey', async () => {
-    const clientKeyInfo = await ctx.forceFetchClientKey();
+    const clientKeyInfo = await ctx.bridge.forceFetchClientKey();
     if (!clientKeyInfo.clientKey) {
       return failedResponse(RETCODE.ACTION_FAILED, 'get clientkey error');
     }
-    return okResponse(clientKeyInfo);
+    return okResponse({ ...clientKeyInfo });
   });
 
   h.registerAction('get_mini_app_ark', async (params) => {
@@ -816,7 +844,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const data = await ctx.getMiniAppArk(
+      const data = await ctx.bridge.getMiniAppArk(
           String(type),
           String(title),
           String(desc),
@@ -842,7 +870,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      const data = await ctx.clickInlineKeyboardButton(
+      const data = await ctx.bridge.clickInlineKeyboardButton(
           groupId,
           botAppid,
           String(buttonId),
@@ -864,7 +892,7 @@ export function register(h: ApiHandler, ctx: ApiActionContext): void {
 
 
     try {
-      await ctx.sendGroupSign(groupId);
+      await ctx.bridge.sendGroupSign(groupId);
       return okResponse({});
     } catch (e) {
       return failedResponse(RETCODE.ACTION_FAILED, String(e));

@@ -17,7 +17,7 @@ import {
   GroupMuteSchema, NotifyMessageBodySchema,
   GeneralGrayTipInfoSchema, OperatorInfoSchema,
 } from './proto/notify';
-import type { QQInfo } from './qq-info';
+import type { IdentityService } from './identity-service';
 import type { PacketInfo } from '../protocol/types';
 import type {
   QQEventVariant, MessageElement,
@@ -98,17 +98,16 @@ function parseU64OrZero(value: string): number {
   return isNaN(n) ? 0 : n;
 }
 
-function resolveUidToUin(qqInfo: QQInfo, groupId: number, uid: string, fallback = 0): number {
+function resolveUidToUin(identity: IdentityService, groupId: number, uid: string, fallback = 0): number {
   if (!uid) return fallback;
   if (isNumericUin(uid)) {
     const n = parseInt(uid, 10);
     if (!isNaN(n)) return n;
   }
-  if (groupId) {
-    const uin = qqInfo.resolveGroupMemberUid(groupId, uid);
-    if (uin !== null) return uin;
-  }
-  const uin = qqInfo.resolveUid(uid);
+  // identity.findUinByUid cascades group-scoped lookup → in-memory map → SQLite.
+  // No network fallback on the parse hot path: missing identities fall back to
+  // `fallback` and downstream events drive a roster refresh asynchronously.
+  const uin = identity.findUinByUid(uid, groupId || undefined);
   if (uin !== null) return uin;
   return fallback;
 }
@@ -564,7 +563,7 @@ function extractMsgContent(msgContent: Uint8Array, elements: MessageElement[]): 
 
 export const MSG_PUSH_CMD = 'trpc.msg.olpush.OlPushService.MsgPush';
 
-export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] {
+export function parseMsgPush(pkt: PacketInfo, identity: IdentityService): QQEventVariant[] {
   if (pkt.body.length === 0) return [];
 
   const push = protoDecode(Buffer.from(pkt.body), PushMsgSchema);
@@ -620,8 +619,8 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupMemberJoin = {
         kind: 'group_member_join', time: timestamp, selfUin,
         groupId,
-        userUin: resolveUidToUin(qqInfo, groupId, userUid, 0),
-        operatorUin: resolveUidToUin(qqInfo, groupId, operatorUid, 0),
+        userUin: resolveUidToUin(identity, groupId, userUid, 0),
+        operatorUin: resolveUidToUin(identity, groupId, operatorUid, 0),
         userUid,
         operatorUid,
       };
@@ -638,8 +637,8 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupMemberLeave = {
         kind: 'group_member_leave', time: timestamp, selfUin,
         groupId,
-        userUin: resolveUidToUin(qqInfo, groupId, userUid, 0),
-        operatorUin: resolveUidToUin(qqInfo, groupId, operatorUid, 0),
+        userUin: resolveUidToUin(identity, groupId, userUid, 0),
+        operatorUin: resolveUidToUin(identity, groupId, operatorUid, 0),
         userUid,
         operatorUid,
         isKick: dt !== 0 && dt !== 130,
@@ -655,7 +654,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupAdminEvent = {
         kind: 'group_admin', time: timestamp, selfUin,
         groupId: admin.groupUin ?? 0,
-        userUin: resolveUidToUin(qqInfo, admin.groupUin ?? 0, extra.adminUid ?? '', fromUin),
+        userUin: resolveUidToUin(identity, admin.groupUin ?? 0, extra.adminUid ?? '', fromUin),
         set: admin.body.extraEnable !== undefined,
       };
       return [ev];
@@ -667,7 +666,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupInviteEvent = {
         kind: 'group_invite', time: timestamp, selfUin,
         groupId: join.groupUin ?? 0,
-        fromUin: resolveUidToUin(qqInfo, join.groupUin ?? 0, join.targetUid ?? '', fromUin),
+        fromUin: resolveUidToUin(identity, join.groupUin ?? 0, join.targetUid ?? '', fromUin),
         fromUid: join.targetUid ?? '',
         subType: 'add', message: '',
         flag: 'add:' + (join.groupUin ?? 0) + ':' + (join.targetUid ?? ''),
@@ -682,7 +681,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupInviteEvent = {
         kind: 'group_invite', time: timestamp, selfUin,
         groupId: inner.groupUin ?? 0,
-        fromUin: resolveUidToUin(qqInfo, inner.groupUin ?? 0, inner.invitorUid ?? '', fromUin),
+        fromUin: resolveUidToUin(identity, inner.groupUin ?? 0, inner.invitorUid ?? '', fromUin),
         fromUid: inner.invitorUid ?? '',
         subType: 'invite', message: '',
         flag: 'invite:' + (inner.groupUin ?? 0) + ':' + (inner.invitorUid ?? ''),
@@ -696,7 +695,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       const ev: GroupInviteEvent = {
         kind: 'group_invite', time: timestamp, selfUin,
         groupId: invite.groupUin ?? 0,
-        fromUin: resolveUidToUin(qqInfo, invite.groupUin ?? 0, invite.invitorUid ?? '', fromUin),
+        fromUin: resolveUidToUin(identity, invite.groupUin ?? 0, invite.invitorUid ?? '', fromUin),
         fromUid: invite.invitorUid ?? '',
         subType: 'invite', message: '',
         flag: 'invite:' + (invite.groupUin ?? 0) + ':' + (invite.invitorUid ?? ''),
@@ -712,7 +711,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           const sourceUid = request.info.newSource || request.info.sourceUid || '';
           const ev: FriendRequestEvent = {
             kind: 'friend_request', time: timestamp, selfUin,
-            fromUin: resolveUidToUin(qqInfo, 0, sourceUid, fromUin),
+            fromUin: resolveUidToUin(identity, 0, sourceUid, fromUin),
             fromUid: sourceUid,
             message: request.info.message ?? '', flag: sourceUid,
           };
@@ -723,7 +722,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           if (!recall?.info) return [];
           const ev: FriendRecall = {
             kind: 'friend_recall', time: recall.info.time ?? timestamp, selfUin,
-            userUin: resolveUidToUin(qqInfo, 0, recall.info.fromUid ?? '', fromUin),
+            userUin: resolveUidToUin(identity, 0, recall.info.fromUid ?? '', fromUin),
             msgSeq: recall.info.clientSequence ?? 0,
           };
           return [ev];
@@ -736,8 +735,8 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           const target = findTemplateValue(templates, 'uin_str2');
           const ev: FriendPokeEvent = {
             kind: 'friend_poke', time: timestamp, selfUin,
-            userUin: resolveUidToUin(qqInfo, 0, actor, parseU64OrZero(actor)),
-            targetUin: resolveUidToUin(qqInfo, 0, target, parseU64OrZero(target)),
+            userUin: resolveUidToUin(identity, 0, actor, parseU64OrZero(actor)),
+            targetUin: resolveUidToUin(identity, 0, target, parseU64OrZero(target)),
             action: findTemplateValue(templates, 'action_str', 'alt_str1'),
             suffix: findTemplateValue(templates, 'suffix_str'),
             actionImgUrl: findTemplateValue(templates, 'action_img_url'),
@@ -757,8 +756,8 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           const ev: GroupMuteEvent = {
             kind: 'group_mute', time: mute.data.timestamp ?? timestamp, selfUin,
             groupId: mute.groupUin ?? 0,
-            operatorUin: resolveUidToUin(qqInfo, mute.groupUin ?? 0, mute.operatorUid ?? '', fromUin),
-            userUin: resolveUidToUin(qqInfo, mute.groupUin ?? 0, mute.data.state.targetUid ?? '', 0),
+            operatorUin: resolveUidToUin(identity, mute.groupUin ?? 0, mute.operatorUid ?? '', fromUin),
+            userUin: resolveUidToUin(identity, mute.groupUin ?? 0, mute.data.state.targetUid ?? '', 0),
             duration: duration === 0xFFFFFFFF ? 0x7FFFFFFF : duration,
           };
           return [ev];
@@ -772,9 +771,9 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           const ev: GroupRecallEvent = {
             kind: 'group_recall', time: recalled.time ?? timestamp, selfUin,
             groupId: notify.groupUin ?? 0,
-            operatorUin: resolveUidToUin(qqInfo, notify.groupUin ?? 0,
+            operatorUin: resolveUidToUin(identity, notify.groupUin ?? 0,
               notify.recall.operatorUid || notify.operatorUid || '', fromUin),
-            authorUin: resolveUidToUin(qqInfo, notify.groupUin ?? 0, recalled.authorUid ?? '', fromUin),
+            authorUin: resolveUidToUin(identity, notify.groupUin ?? 0, recalled.authorUid ?? '', fromUin),
             msgSeq: recalled.sequence ?? 0,
           };
           return [ev];
@@ -790,8 +789,8 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
           const ev: GroupPokeEvent = {
             kind: 'group_poke', time: timestamp, selfUin,
             groupId: notify.groupUin ?? 0,
-            userUin: resolveUidToUin(qqInfo, notify.groupUin ?? 0, actor, parseU64OrZero(actor)),
-            targetUin: resolveUidToUin(qqInfo, notify.groupUin ?? 0, target, parseU64OrZero(target)),
+            userUin: resolveUidToUin(identity, notify.groupUin ?? 0, actor, parseU64OrZero(actor)),
+            targetUin: resolveUidToUin(identity, notify.groupUin ?? 0, target, parseU64OrZero(target)),
             action: findTemplateValue(templates, 'action_str', 'alt_str1'),
             suffix: findTemplateValue(templates, 'suffix_str'),
             actionImgUrl: findTemplateValue(templates, 'action_img_url'),
@@ -835,7 +834,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       ev.groupId = msg.responseHead.grp.groupUin ?? 0;
       ev.senderNick = msg.responseHead.grp.memberName ?? '';
     }
-    const member = qqInfo.findGroupMember(ev.groupId, fromUin);
+    const member = identity.findGroupMember(ev.groupId, fromUin);
     if (member) {
       if (!ev.senderNick) ev.senderNick = member.nickname;
       ev.senderCard = member.card;
@@ -856,7 +855,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
       ev.senderNick = msg.responseHead.grp.memberName ?? '';
     }
     if (!ev.senderNick) {
-      const friend = qqInfo.findFriend(fromUin);
+      const friend = identity.findFriend(fromUin);
       if (friend) ev.senderNick = friend.nickname;
     }
     return [ev];
@@ -876,7 +875,7 @@ export function parseMsgPush(pkt: PacketInfo, qqInfo: QQInfo): QQEventVariant[] 
     if (msg.responseHead?.forward?.friendName) {
       ev.senderNick = msg.responseHead.forward.friendName;
     }
-    const friend = qqInfo.findFriend(fromUin);
+    const friend = identity.findFriend(fromUin);
     if (friend && !ev.senderNick) ev.senderNick = friend.nickname;
     return [ev];
   }

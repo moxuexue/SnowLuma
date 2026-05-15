@@ -395,6 +395,11 @@ export const OidbGroupReactionSchema = {
   groupUin: { field: 1, type: 'uint32' as const },
   sequence: { field: 2, type: 'uint32' as const },
   code:     { field: 3, type: 'string' as const },
+  // 1 = legacy QQ face (short numeric id like "76"), 2 = unicode emoji
+  // (decimal codepoint string like "128516" for 😄). Omitting this
+  // field used to make unicode reactions fail server-side because the
+  // server defaulted to type=1 and couldn't resolve a 6-digit code.
+  type:     { field: 4, type: 'uint32' as const },
 } satisfies ProtoSchema;
 
 // --- 0x6D8_1: Group file list ---

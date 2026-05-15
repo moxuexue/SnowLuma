@@ -4,7 +4,7 @@
 
 import type { Bridge } from '../bridge';
 import { protoDecode, protoEncode } from '../../protobuf/decode';
-import { sendOidbAndCheck, sendOidbAndDecode, resolveUserUid } from '../bridge-oidb';
+import { runOidb } from '../bridge-oidb';
 import { fetchHighwaySession, uploadHighwayHttp } from '../highway/highway-client';
 import { computeHashes, loadBinarySource } from '../highway/utils';
 import {
@@ -60,7 +60,7 @@ export async function setProfile(
   nickname?: string,
   personalNote?: string,
 ): Promise<void> {
-  const uin = BigInt(bridge.qqInfo.uin);
+  const uin = BigInt(bridge.identity.uin);
   const stringProfiles: any[] = [];
   const intProfiles: any[] = [];
 
@@ -81,14 +81,11 @@ export async function setProfile(
     stringProfiles,
   };
 
-  await sendOidbAndCheck(
-    bridge,
-    'OidbSvcTrpcTcp.0x112a_2',
-    0x112A,
-    2,
-    req,
-    OidbSetProfileSchema,
-  );
+  await runOidb(bridge, {
+    cmd: 'OidbSvcTrpcTcp.0x112a_2',
+    oidbCmd: 0x112A, subCmd: 2,
+    request: { schema: OidbSetProfileSchema, value: req },
+  });
 }
 
 export async function setSelfLongNick(
@@ -96,22 +93,19 @@ export async function setSelfLongNick(
   longNick: string,
 ) {
   const req = {
-    uin: BigInt(bridge.qqInfo.uin),
+    uin: BigInt(bridge.identity.uin),
     profile: {
       tag: 102,
       value: String(longNick),
     },
   };
 
-  await sendOidbAndDecode<any>(
-    bridge,
-    'OidbSvcTrpcTcp.0x112a_2',
-    0x112A,
-    2,
-    req,
-    Oidb0x112aReqSchema,
-    Oidb0x112aRespSchema,
-  );
+  await runOidb<any>(bridge, {
+    cmd: 'OidbSvcTrpcTcp.0x112a_2',
+    oidbCmd: 0x112A, subCmd: 2,
+    request: { schema: Oidb0x112aReqSchema, value: req },
+    response: { schema: Oidb0x112aRespSchema },
+  });
 }
 
 export async function setInputStatus(
@@ -119,7 +113,7 @@ export async function setInputStatus(
   userId: number,
   eventType: number,
 ) {
-  const targetUid = await resolveUserUid(bridge, userId);
+  const targetUid = await bridge.resolveUserUid(userId);
 
   if (!targetUid) {
     throw new Error('target uid not found');
@@ -133,15 +127,12 @@ export async function setInputStatus(
     },
   };
 
-  await sendOidbAndDecode<any>(
-    bridge,
-    'OidbSvcTrpcTcp.0xcd4_1',
-    0xCD4,
-    1,
-    req,
-    Oidb0xcd4ReqSchema,
-    Oidb0xcd4RespSchema,
-  );
+  await runOidb<any>(bridge, {
+    cmd: 'OidbSvcTrpcTcp.0xcd4_1',
+    oidbCmd: 0xCD4, subCmd: 1,
+    request: { schema: Oidb0xcd4ReqSchema, value: req },
+    response: { schema: Oidb0xcd4RespSchema },
+  });
 }
 
 export async function setAvatar(
@@ -167,7 +158,7 @@ export async function getProfileLike(
   const isSelf = !userId;
   const targetUid = isSelf
     ? await resolveSelfUid(bridge)
-    : await resolveUserUid(bridge, userId);
+    : await bridge.resolveUserUid(userId);
 
   if (!targetUid) {
     throw new Error('target uid not found');
@@ -182,15 +173,12 @@ export async function getProfileLike(
     limit: limit,
   };
 
-  const result = await sendOidbAndDecode<any>(
-    bridge,
-    'OidbSvcTrpcTcp.0x7ed_12',
-    0x7ED,
-    12,
-    req,
-    Oidb0x7edReqSchema,
-    Oidb0x7edRespSchema,
-  );
+  const result = await runOidb<any>(bridge, {
+    cmd: 'OidbSvcTrpcTcp.0x7ed_12',
+    oidbCmd: 0x7ED, subCmd: 12,
+    request: { schema: Oidb0x7edReqSchema, value: req },
+    response: { schema: Oidb0x7edRespSchema },
+  });
 
   const data = result?.userLikeInfos?.[0];
   if (!data) {
@@ -220,7 +208,7 @@ export async function getUnidirectionalFriendList(
   bridge: Bridge,
 ) {
   const reqObj = {
-    uint64_uin: String(bridge.qqInfo.uin),
+    uint64_uin: String(bridge.identity.uin),
     uint64_top: 0,
     uint32_req_num: 99,
     bytes_cookies: '',
@@ -230,15 +218,12 @@ export async function getUnidirectionalFriendList(
     jsonBody: JSON.stringify(reqObj),
   };
 
-  const result = await sendOidbAndDecode<any>(
-    bridge,
-    'MQUpdateSvc_com_qq_ti.web.OidbSvc.0xe17_0',
-    0xE17,
-    0,
-    req,
-    Oidb0xe17ReqSchema,
-    Oidb0xe17RespSchema,
-  );
+  const result = await runOidb<any>(bridge, {
+    cmd: 'MQUpdateSvc_com_qq_ti.web.OidbSvc.0xe17_0',
+    oidbCmd: 0xE17, subCmd: 0,
+    request: { schema: Oidb0xe17ReqSchema, value: req },
+    response: { schema: Oidb0xe17RespSchema },
+  });
 
   if (!result || !result.jsonBody) {
     throw new Error('get unidirectional friend list empty');
@@ -251,7 +236,7 @@ export async function getUnidirectionalFriendList(
 export async function fetchCustomFace(bridge: Bridge, count: number = 10): Promise<string[]> {
   const req = {
     inner: { field1: 1, osVersion: '10.0.26200', qqVersion: '9.9.28-46928' },
-    uin: BigInt(bridge.qqInfo.uin),
+    uin: BigInt(bridge.identity.uin),
     field3: 1,
     field6: 1,
   };
@@ -265,5 +250,5 @@ export async function fetchCustomFace(bridge: Bridge, count: number = 10): Promi
     throw new Error(`fetch custom face error: ${(resp as any)?.message || 'unknown'}`);
   }
   const faceIds = (resp as any).item?.faceIds || [];
-  return faceIds.slice(0, count).map((id: string) => `https://p.qpic.cn/qq_expression/${bridge.qqInfo.uin}/${id}/0`);
+  return faceIds.slice(0, count).map((id: string) => `https://p.qpic.cn/qq_expression/${bridge.identity.uin}/${id}/0`);
 }

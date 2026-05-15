@@ -234,35 +234,17 @@ export const NTV2UploadInfoSchema = {
   subFileType: { field: 2, type: 'uint32' as const },
 } satisfies ProtoSchema;
 
-export const NTV2PicReserveC2CSchema = {
-  subType: { field: 1, type: 'uint32' as const },
-} satisfies ProtoSchema;
-
-export const NTV2PicReserveTroopSchema = {
-  subType: { field: 1, type: 'uint32' as const },
-} satisfies ProtoSchema;
-
-export const NTV2PicExtBizInfoSchema = {
-  bizType:      { field: 1, type: 'uint32' as const },
-  textSummary:  { field: 2, type: 'string' as const },
-  reserveC2c:   { field: 11, type: 'message' as const, schema: NTV2PicReserveC2CSchema },
-  reserveTroop: { field: 12, type: 'message' as const, schema: NTV2PicReserveTroopSchema },
-} satisfies ProtoSchema;
-
-export const NTV2VideoExtBizInfoSchema = {
-  bytesPbReserve: { field: 3, type: 'bytes' as const },
-} satisfies ProtoSchema;
-
-export const NTV2PttExtBizInfoSchema = {
-  bytesReserve:      { field: 11, type: 'bytes' as const },
-  bytesPbReserve:    { field: 12, type: 'bytes' as const },
-  bytesGeneralFlags: { field: 13, type: 'bytes' as const },
-} satisfies ProtoSchema;
-
+// The NTV2 upload request + response carry the same ExtBizInfo shape that
+// element-side incoming-message decoding uses. Pulling those schemas in
+// directly (instead of redefining stub copies) keeps the round-trip
+// `server response → finalizeMediaMsgInfo → commonElem.pbElem` from
+// silently dropping fields the QQ NT server later validates against —
+// the video `fromScene`/`toScene` drop was already responsible for c2c
+// `result=79` rejections on `send_private_msg [{type:'video'}]`.
 export const NTV2ExtBizInfoSchema = {
-  pic:      { field: 1, type: 'message' as const, schema: NTV2PicExtBizInfoSchema },
-  video:    { field: 2, type: 'message' as const, schema: NTV2VideoExtBizInfoSchema },
-  ptt:      { field: 3, type: 'message' as const, schema: NTV2PttExtBizInfoSchema },
+  pic:      { field: 1, type: 'message' as const, schema: PicExtBizInfoSchema },
+  video:    { field: 2, type: 'message' as const, schema: VideoExtBizInfoSchema },
+  ptt:      { field: 3, type: 'message' as const, schema: PttExtBizInfoSchema },
   busiType: { field: 10, type: 'uint32' as const },
 } satisfies ProtoSchema;
 

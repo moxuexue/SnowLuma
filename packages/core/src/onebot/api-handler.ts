@@ -1,4 +1,6 @@
 import type { JsonObject, JsonValue, MessageMeta } from './types';
+import type { ForwardPreviewMeta } from './modules/message-actions';
+import type { BridgeInterface } from '../bridge/bridge-interface';
 import { RETCODE, failedResponse } from './types';
 
 import { register as registerInfo } from './actions/info';
@@ -30,6 +32,14 @@ export interface GroupEssenceMsgRet {
 }
 
 export interface ApiActionContext {
+  /**
+   * Direct access to the BridgeInterface. Use for actions that are pure
+   * 1:1 calls to a Bridge method — no rename, no default args, no
+   * composition with messageStore / mediaStore. When translation IS
+   * needed, route through the named adapters declared below instead.
+   */
+  bridge: BridgeInterface;
+
   getLoginInfo: () => { userId: number; nickname: string };
   isOnline: () => boolean;
   getMessage: (messageId: number) => JsonObject | null;
@@ -46,87 +56,48 @@ export interface ApiActionContext {
   getGroupMemberList: (groupId: number, noCache?: boolean) => Promise<JsonObject[]>;
   getGroupMemberInfo: (groupId: number, userId: number, noCache?: boolean) => Promise<JsonObject | null>;
   getStrangerInfo: (userId: number) => Promise<JsonObject | null>;
-  // Group admin
+  // Group admin (adapters: rename Bridge methods to OneBot vocabulary)
   setGroupKick: (groupId: number, userId: number, rejectAdd: boolean) => Promise<void>;
   setGroupKickMembers: (groupId: number, userIds: number[], rejectAdd: boolean) => Promise<void>;
   setGroupBan: (groupId: number, userId: number, duration: number) => Promise<void>;
   setGroupWholeBan: (groupId: number, enable: boolean) => Promise<void>;
-  setGroupAddOption: (groupId: number, addType: number) => Promise<void>;
-  setGroupSearch: (groupId: number) => Promise<void>;
-  setGroupAdmin: (groupId: number, userId: number, enable: boolean) => Promise<void>;
-  setGroupCard: (groupId: number, userId: number, card: string) => Promise<void>;
-  setGroupName: (groupId: number, name: string) => Promise<void>;
   setGroupLeave: (groupId: number) => Promise<void>;
-  setGroupSpecialTitle: (groupId: number, userId: number, title: string) => Promise<void>;
-  getGroupAtAllRemain: (groupId: number) => Promise<any>;
-  // Group file
+  // Group file (adapters: field extraction + Bridge name translation)
   uploadGroupFile: (groupId: number, file: string, name?: string, folderId?: string, uploadFile?: boolean) => Promise<string | null>;
   uploadPrivateFile: (userId: number, file: string, name?: string, uploadFile?: boolean) => Promise<string | null>;
   getGroupFileUrl: (groupId: number, fileId: string, busId?: number) => Promise<string>;
   getGroupFiles: (groupId: number, folderId?: string) => Promise<JsonObject>;
-  deleteGroupFile: (groupId: number, fileId: string) => Promise<void>;
-  moveGroupFile: (groupId: number, fileId: string, parentDirectory: string, targetDirectory: string) => Promise<void>;
   createGroupFileFolder: (groupId: number, name: string, parentId?: string) => Promise<void>;
-  deleteGroupFileFolder: (groupId: number, folderId: string) => Promise<void>;
-  renameGroupFileFolder: (groupId: number, folderId: string, newName: string) => Promise<void>;
   getPrivateFileUrl: (userId: number, fileId: string, fileHash: string) => Promise<string>;
-  // Requests
+  getGroupFileCount: (groupId: number) => Promise<{ fileCount: number; maxCount: number }>;
+  // Requests (adapters: rename to OneBot vocabulary)
   handleFriendRequest: (flag: string, approve: boolean) => Promise<void>;
   handleGroupRequest: (flag: string, subType: string, approve: boolean, reason: string) => Promise<void>;
-  // Extended
-  sendLike: (userId: number, times: number) => Promise<void>;
+  // Pokes (adapters: flatten isGroup into bridge.sendPoke signature)
   sendFriendPoke: (userId: number, targetId?: number) => Promise<void>;
   sendGroupPoke: (groupId: number, userId: number) => Promise<void>;
+  // Essence (adapter: bakes the set/unset boolean)
   setEssenceMsg: (messageId: number) => Promise<void>;
   deleteEssenceMsg: (messageId: number) => Promise<void>;
-  forceFetchClientKey: () => Promise<{clientKey: string, keyIndex: string, expireTime: string}>;
-  setOnlineStatus: (status: number, extStatus?: number, batteryStatus?: number) => Promise<void>;
-  setProfile: (nickname?: string, personalNote?: string) => Promise<void>;
-  getUnidirectionalFriendList: () => Promise<any>;
-  setSelfLongNick: (longNick: string) => Promise<void>;
-  setInputStatus: (userId: number, eventType: number) => Promise<void>;
-  translateEn2Zh: (words: string[]) => Promise<string[]>;
-  getMiniAppArk: (type: string, title: string, desc: string, picUrl: string, jumpUrl: string) => Promise<any>;
-  clickInlineKeyboardButton: (groupId: number, botAppid: number, buttonId: string, callbackData: string, msgSeq: number) => Promise<any>;
-  sendGroupSign: (groupId: number) => Promise<void>;
-  // New context methods
-  setGroupReaction: (groupId: number, sequence: number, code: string, isSet: boolean) => Promise<void>;
+  // Profile reads with OneBot-specific default args
+  getProfileLike: (userId?: number, start?: number, limit?: number) => Promise<any>;
+  getGroupEssence: (groupId: number, pageStart?: number, pageLimit?: number) => Promise<GroupEssenceMsgRet>;
+  // Friend deletion (adapter: rename + force-boolean)
   handleDeleteFriend: (userId: number, block?: boolean) => Promise<void>;
+  // Module wrappers / multi-dep compositions
   getGroupMsgHistory: (groupId: number, messageId?: number, count?: number) => Promise<JsonObject[]>;
   getFriendMsgHistory: (userId: number, messageId?: number, count?: number) => Promise<JsonObject[]>;
   handleGetGroupSystemMsg: () => Promise<JsonObject[]>;
   getDownloadRKeys: () => Promise<JsonObject[]>;
-  // Forward message
-  sendGroupForwardMsg: (groupId: number, messages: JsonValue) => Promise<{ messageId: number; forwardId: string }>;
-  sendPrivateForwardMsg: (userId: number, messages: JsonValue) => Promise<{ messageId: number; forwardId: string }>;
+  sendGroupForwardMsg: (groupId: number, messages: JsonValue, meta?: ForwardPreviewMeta) => Promise<{ messageId: number; forwardId: string }>;
+  sendPrivateForwardMsg: (userId: number, messages: JsonValue, meta?: ForwardPreviewMeta) => Promise<{ messageId: number; forwardId: string }>;
   sendForwardMsg: (messages: JsonValue) => Promise<{ forwardId: string }>;
   getForwardMsg: (resId: string) => Promise<JsonObject[]>;
   forwardSingleMsg: (messageId: number, target: { groupId?: number; userId?: number }) => Promise<{ messageId: number }>;
-  // Extended NapCat-compatible
-  setFriendRemark: (userId: number, remark: string) => Promise<void>;
-  setGroupRemark: (groupId: number, remark: string) => Promise<void>;
-  getGroupFileCount: (groupId: number) => Promise<{ fileCount: number; maxCount: number }>;
   setMsgEmojiLike: (messageId: number, emojiId: string, set: boolean) => Promise<void>;
-  markGroupMsgAsRead: (groupId: number, sequence: number) => Promise<void>;
-  markPrivateMsgAsRead: (userId: number, sequence: number) => Promise<void>;
-  getProfileLike: (userId?: number, start?: number, limit?: number) => Promise<any>;
-  fetchCustomFace: (count?: number) => Promise<string[]>;
-  getEmojiLikes: (groupId: number, sequence: number, emojiId: string, emojiType?: number, count?: number, cookie?: string) => Promise<{ users: Array<{ uin: number }>, cookie: string, isLast: boolean }>;
-  // Web
-  getGroupHonorInfo: (groupId: number, type: WebHonorType | string) => Promise<any>;
-  getGroupEssence: (groupId: number, pageStart?: number, pageLimit?: number) => Promise<GroupEssenceMsgRet>;
-  getGroupEssenceAll: (groupId: number) => Promise<GroupEssenceMsgRet[]>;
-  sendGroupNotice: (groupId: number, content: string, options?: any) => Promise<any>;
-  getGroupNotice: (groupId: number) => Promise<any[]>;
-  deleteGroupNotice: (groupId: number, fid: string) => Promise<boolean>;
-  getCookiesStr: (domain: string) => Promise<string>;
-  getCsrfToken: () => Promise<number>;
-  getCredentials: (domain: string) => Promise<{ cookies: string; token: number; csrf_token: number }>;
   // Media lookup (populated from previously dispatched message segments)
   getImageInfo: (file: string) => Promise<JsonObject | null>;
   getRecordInfo: (file: string) => Promise<JsonObject | null>;
-  // Avatar
-  setAvatar: (source: string) => Promise<void>;
 }
 
 type ActionHandler = (params: JsonObject) => Promise<import('./types').ApiResponse>;

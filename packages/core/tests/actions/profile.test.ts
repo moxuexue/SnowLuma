@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/bridge/bridge-oidb', () => ({
-  sendOidbAndCheck: vi.fn(async () => undefined),
-  sendOidbAndDecode: vi.fn(async () => ({})),
-  resolveUserUid: vi.fn(async () => 'resolved-uid'),
-  makeOidbRequest: vi.fn(() => new Uint8Array(0)),
+  runOidb: vi.fn(async () => ({})),
 }));
 
 vi.mock('../../src/bridge/highway/highway-client', () => ({
@@ -25,9 +22,8 @@ import { mockBridge } from './_helpers';
 
 describe('actions/profile', () => {
   beforeEach(() => {
-    vi.mocked(oidb.sendOidbAndCheck).mockClear();
-    vi.mocked(oidb.sendOidbAndDecode).mockClear();
-    vi.mocked(oidb.resolveUserUid).mockClear();
+    vi.mocked(oidb.runOidb).mockReset();
+    vi.mocked(oidb.runOidb).mockResolvedValue({});
     vi.mocked(highwayClient.fetchHighwaySession).mockClear();
     vi.mocked(highwayClient.uploadHighwayHttp).mockClear();
   });
@@ -42,30 +38,30 @@ describe('actions/profile', () => {
   it('setProfile is a no-op when both arguments are undefined', async () => {
     const bridge = mockBridge();
     await profile.setProfile(bridge as any);
-    expect(oidb.sendOidbAndCheck).not.toHaveBeenCalled();
+    expect(oidb.runOidb).not.toHaveBeenCalled();
   });
 
   it('setProfile only sends non-undefined fields', async () => {
     const bridge = mockBridge();
     await profile.setProfile(bridge as any, 'New Nick');
-    expect(oidb.sendOidbAndCheck).toHaveBeenCalledOnce();
-    const body: any = vi.mocked(oidb.sendOidbAndCheck).mock.calls[0]![4];
-    expect(body.stringProfiles).toEqual([{ fieldId: 20002, value: 'New Nick' }]);
+    expect(oidb.runOidb).toHaveBeenCalledOnce();
+    const call = vi.mocked(oidb.runOidb).mock.calls[0]![1];
+    expect((call.request.value as any).stringProfiles).toEqual([{ fieldId: 20002, value: 'New Nick' }]);
   });
 
   it('setSelfLongNick wraps the long nick in profile tag 102', async () => {
     const bridge = mockBridge();
     await profile.setSelfLongNick(bridge as any, 'hello world');
-    const call = vi.mocked(oidb.sendOidbAndDecode).mock.calls[0]!;
-    expect((call[4] as any).profile).toEqual({ tag: 102, value: 'hello world' });
+    const call = vi.mocked(oidb.runOidb).mock.calls[0]![1];
+    expect((call.request.value as any).profile).toEqual({ tag: 102, value: 'hello world' });
   });
 
   it('setInputStatus resolves UID first and sends 0xcd4_1', async () => {
     const bridge = mockBridge();
     await profile.setInputStatus(bridge as any, 10001, 1);
-    expect(oidb.resolveUserUid).toHaveBeenCalledWith(bridge, 10001);
-    const call = vi.mocked(oidb.sendOidbAndDecode).mock.calls[0]!;
-    expect(call[1]).toBe('OidbSvcTrpcTcp.0xcd4_1');
+    expect(bridge.resolveUserUid).toHaveBeenCalledWith(10001);
+    const call = vi.mocked(oidb.runOidb).mock.calls[0]![1];
+    expect(call.cmd).toBe('OidbSvcTrpcTcp.0xcd4_1');
   });
 
   it('setAvatar loads bytes and pushes through the highway upload path (cmd 90)', async () => {
@@ -79,7 +75,7 @@ describe('actions/profile', () => {
 
   it('getProfileLike (self): resolves self UID, returns formatted favorite + vote info', async () => {
     const bridge = mockBridge();
-    vi.mocked(oidb.sendOidbAndDecode).mockResolvedValueOnce({
+    vi.mocked(oidb.runOidb).mockResolvedValueOnce({
       userLikeInfos: [{
         uid: 'u',
         time: 1700000000n,
@@ -94,13 +90,13 @@ describe('actions/profile', () => {
 
   it('getProfileLike throws on empty result', async () => {
     const bridge = mockBridge();
-    vi.mocked(oidb.sendOidbAndDecode).mockResolvedValueOnce({ userLikeInfos: [] });
+    vi.mocked(oidb.runOidb).mockResolvedValueOnce({ userLikeInfos: [] });
     await expect(profile.getProfileLike(bridge as any)).rejects.toThrow(/empty/);
   });
 
   it('getUnidirectionalFriendList parses the embedded JSON body', async () => {
     const bridge = mockBridge();
-    vi.mocked(oidb.sendOidbAndDecode).mockResolvedValueOnce({
+    vi.mocked(oidb.runOidb).mockResolvedValueOnce({
       jsonBody: JSON.stringify({ rpt_block_list: [{ uin: 10001 }, { uin: 10002 }] }),
     });
     const out = await profile.getUnidirectionalFriendList(bridge as any);

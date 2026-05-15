@@ -1,5 +1,4 @@
-import type { Bridge } from '../bridge/bridge';
-import type { QQInfo } from '../bridge/qq-info';
+import type { BridgeInterface } from '../bridge/bridge-interface';
 import type { BridgeManager } from '../bridge/manager';
 import { loadOneBotConfig } from './config';
 import { OneBotInstance } from './instance';
@@ -12,8 +11,8 @@ export class OneBotManager {
   private readonly instances = new Map<string, OneBotInstance>();
 
   bind(bridgeManager: BridgeManager): void {
-    bridgeManager.setSessionStartedCallback((uin, qqInfo, bridge) => {
-      this.onSessionStarted(uin, qqInfo, bridge);
+    bridgeManager.setSessionStartedCallback((uin, bridge) => {
+      this.onSessionStarted(uin, bridge);
     });
 
     bridgeManager.setSessionClosedCallback((uin) => {
@@ -49,22 +48,26 @@ export class OneBotManager {
     this.instances.clear();
   }
 
-  private onSessionStarted(uin: string, qqInfo: QQInfo, bridge: Bridge): void {
+  private onSessionStarted(uin: string, bridge: BridgeInterface): void {
     if (this.instances.has(uin)) return;
 
     const config = loadOneBotConfig(uin);
-    const instance = new OneBotInstance(uin, qqInfo, bridge, config);
+    const instance = new OneBotInstance(uin, bridge, config);
 
     const activePid = bridge.activePid;
     if (activePid !== null) {
       instance.addPid(activePid);
     }
 
+    // Seed nickname with the UIN so the WebUI never renders blank while
+    // warmup is in flight or if warmup never resolves a real nickname.
+    if (!bridge.identity.nickname) bridge.identity.nickname = uin;
+
     this.instances.set(uin, instance);
     log.info('session started: UIN=%s', uin);
 
     // Warm up bridge state asynchronously (mirrors C++ warm_up_bridge_state)
-    warmUpBridgeState(uin, qqInfo, bridge).catch((err) => {
+    warmUpBridgeState(uin, bridge).catch((err) => {
       log.warn('warmup error for UIN %s: %s', uin, err instanceof Error ? (err.stack ?? err.message) : String(err));
     });
   }
@@ -80,27 +83,50 @@ export class OneBotManager {
 
 }
 
-async function warmUpBridgeState(uin: string, qqInfo: QQInfo, bridge: Bridge): Promise<void> {
-  // Step 1: Fetch friend list + derive self profile
+async function warmUpBridgeState(uin: string, bridge: BridgeInterface): Promise<void> {
+  const selfUin = parseInt(uin, 10) || 0;
+  let selfResolved = false;
+
+  // Step 1: Fetch friend list + derive self profile when QQ happens to
+  // include self in the response. Some accounts / versions omit self,
+  // which used to leave identity.nickname empty — see step 1b for the
+  // explicit fallback.
   try {
     const friends = await bridge.fetchFriendList();
     log.info('friends loaded: UIN=%s count=%d', uin, friends.length);
 
-    const selfUin = parseInt(uin, 10) || 0;
     for (const f of friends) {
       if (f.uin === selfUin) {
-        qqInfo.setSelfProfile({
+        bridge.identity.setSelfProfile({
           uin: f.uin, uid: f.uid,
           nickname: f.nickname || uin,
           remark: '', qid: '', sex: 'unknown', age: 0, sign: '', avatar: '',
         });
-        qqInfo.nickname = f.nickname || uin;
+        bridge.identity.nickname = f.nickname || uin;
         log.debug('self info: UIN=%s uid=%s nickname=%s', uin, f.uid, f.nickname ?? '');
+        selfResolved = true;
         break;
       }
     }
   } catch (e) {
     log.warn('failed to load friends for UIN %s: %s', uin, e instanceof Error ? e.message : String(e));
+  }
+
+  // Step 1b: friend-list path didn't resolve self → fetch user profile
+  // directly via OIDB 0xFE1_2 so multi-account WebUI shows a nickname
+  // for every injected session, not just the ones where QQ echoed self
+  // back in the friend list.
+  if (!selfResolved && selfUin > 0) {
+    try {
+      const profile = await bridge.fetchUserProfile(selfUin);
+      bridge.identity.setSelfProfile(profile);
+      bridge.identity.nickname = profile.nickname || uin;
+      log.debug('self info via profile: UIN=%s uid=%s nickname=%s',
+        uin, profile.uid, profile.nickname);
+    } catch (e) {
+      log.warn('failed to load self profile for UIN %s: %s',
+        uin, e instanceof Error ? e.message : String(e));
+    }
   }
 
   // Step 2: Fetch group list

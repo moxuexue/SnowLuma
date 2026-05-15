@@ -27,6 +27,15 @@ export interface MessageElement {
   flash?: boolean;
   resId?: string;
   fileHash?: string;
+  // Preview-bubble metadata for the `forward` element. Drives the XML
+  // template (brief/title/news/summary/tSum) the recipient renders before
+  // they tap to expand. When unset, the element builder falls back to
+  // generic defaults so old call sites keep working.
+  forwardSource?: string;
+  forwardSummary?: string;
+  forwardPrompt?: string;
+  forwardNews?: Array<{ text: string }>;
+  forwardTSum?: number;
   // Server-side fingerprints carried from receive side so a forward can do a
   // pure md5/sha1 fast-upload without re-downloading the original bytes.
   // Set together with `noByteFallback: true` to make the upload modules throw
