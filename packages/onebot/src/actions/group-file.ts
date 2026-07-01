@@ -26,7 +26,7 @@ export const actions = [
     // non-empty wins, else '/'. Both default '' so the `||` chain matches the
     // legacy `asString(folder) || asString(folder_id) || '/'`.
     params: {
-      file: f.string({ allowEmpty: false }),
+      file: f.file(),
       name: f.string().default(''),
       folder: f.string().default(''),
       folder_id: f.string().default(''),
@@ -44,8 +44,8 @@ export const actions = [
     summary: '上传私聊文件',
     returns: '{ file_id: string }',
     params: {
-      user_id: f.uint(),
-      file: f.string({ allowEmpty: false }),
+      user_id: f.userId(),
+      file: f.file(),
       name: f.string().default(''),
       upload_file: f.bool().default(true),
     },
@@ -59,10 +59,15 @@ export const actions = [
     name: 'get_group_file_url',
     summary: '获取群文件下载链接',
     readOnly: true,
-    returns: '{ url: string }',
+    returns: '群文件下载链接。',
+    returnsSchema: {
+      type: 'object',
+      properties: { url: { type: 'string', description: '文件下载直链' } },
+      required: ['url'],
+    },
     // busid is accepted but tolerant (see busidOr102): NapCat/LLBot ignore it,
     // so a present null/empty/non-numeric value must not 400 the request (#147).
-    params: { file_id: f.string({ allowEmpty: false }), busid: f.raw() },
+    params: { file_id: f.fileId(), busid: f.raw() },
     run: async (p, ctx) => {
       return okResponse({ url: await ctx.bridge.apis.groupFile.getUrl(p.group_id, p.file_id, busidOr102(p.busid)) });
     },
@@ -72,6 +77,49 @@ export const actions = [
     name: 'get_group_root_files',
     summary: '获取群根目录文件列表',
     readOnly: true,
+    returns: '群文件系统信息（文件与文件夹列表）。',
+    returnsSchema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          description: '文件列表',
+          items: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'integer', description: '群号' },
+              file_id: { type: 'string', description: '文件 ID' },
+              file_name: { type: 'string', description: '文件名' },
+              busid: { type: 'integer', description: '业务 ID' },
+              file_size: { type: 'integer', description: '文件大小（字节）' },
+              upload_time: { type: 'integer', description: '上传时间戳' },
+              dead_time: { type: 'integer', description: '过期时间戳' },
+              modify_time: { type: 'integer', description: '修改时间戳' },
+              download_times: { type: 'integer', description: '下载次数' },
+              uploader: { type: 'integer', description: '上传者 QQ 号' },
+              uploader_name: { type: 'string', description: '上传者昵称' },
+            },
+          },
+        },
+        folders: {
+          type: 'array',
+          description: '文件夹列表',
+          items: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'integer', description: '群号' },
+              folder_id: { type: 'string', description: '文件夹 ID' },
+              folder_name: { type: 'string', description: '文件夹名' },
+              create_time: { type: 'integer', description: '创建时间戳' },
+              creator: { type: 'integer', description: '创建者 QQ 号' },
+              create_name: { type: 'string', description: '创建者昵称' },
+              total_file_count: { type: 'integer', description: '文件夹内文件总数' },
+            },
+          },
+        },
+      },
+      required: ['files', 'folders'],
+    },
     run: async (p, ctx) => {
       return okResponse(await ctx.getGroupFiles(p.group_id, '/'));
     },
@@ -81,6 +129,49 @@ export const actions = [
     name: 'get_group_files_by_folder',
     summary: '获取群子目录文件列表',
     readOnly: true,
+    returns: '群文件系统信息（文件与文件夹列表）。',
+    returnsSchema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          description: '文件列表',
+          items: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'integer', description: '群号' },
+              file_id: { type: 'string', description: '文件 ID' },
+              file_name: { type: 'string', description: '文件名' },
+              busid: { type: 'integer', description: '业务 ID' },
+              file_size: { type: 'integer', description: '文件大小（字节）' },
+              upload_time: { type: 'integer', description: '上传时间戳' },
+              dead_time: { type: 'integer', description: '过期时间戳' },
+              modify_time: { type: 'integer', description: '修改时间戳' },
+              download_times: { type: 'integer', description: '下载次数' },
+              uploader: { type: 'integer', description: '上传者 QQ 号' },
+              uploader_name: { type: 'string', description: '上传者昵称' },
+            },
+          },
+        },
+        folders: {
+          type: 'array',
+          description: '文件夹列表',
+          items: {
+            type: 'object',
+            properties: {
+              group_id: { type: 'integer', description: '群号' },
+              folder_id: { type: 'string', description: '文件夹 ID' },
+              folder_name: { type: 'string', description: '文件夹名' },
+              create_time: { type: 'integer', description: '创建时间戳' },
+              creator: { type: 'integer', description: '创建者 QQ 号' },
+              create_name: { type: 'string', description: '创建者昵称' },
+              total_file_count: { type: 'integer', description: '文件夹内文件总数' },
+            },
+          },
+        },
+      },
+      required: ['files', 'folders'],
+    },
     // folder_id / folder are aliases; first non-empty wins, else '/'.
     params: { folder_id: f.string().default(''), folder: f.string().default('') },
     run: async (p, ctx) => {
@@ -92,7 +183,7 @@ export const actions = [
   groupAction({
     name: 'delete_group_file',
     summary: '删除群文件',
-    params: { file_id: f.string({ allowEmpty: false }) },
+    params: { file_id: f.fileId() },
     run: async (p, ctx) => {
       await ctx.bridge.apis.groupFile.delete(p.group_id, p.file_id);
       return okResponse();
@@ -103,7 +194,7 @@ export const actions = [
     name: 'move_group_file',
     summary: '移动群文件',
     params: {
-      file_id: f.string({ allowEmpty: false }),
+      file_id: f.fileId(),
       parent_directory: f.string({ allowEmpty: false }),
       target_directory: f.string({ allowEmpty: false }),
     },
@@ -119,7 +210,7 @@ export const actions = [
     name: 'rename_group_file',
     summary: '重命名群文件',
     params: {
-      file_id: f.string({ allowEmpty: false }),
+      file_id: f.fileId(),
       current_parent_directory: f.string().default('/'),
       new_name: f.string({ allowEmpty: false }),
     },
@@ -171,7 +262,12 @@ export const actions = [
     name: 'get_private_file_url',
     summary: '获取私聊文件下载链接',
     readOnly: true,
-    returns: '{ url: string }',
+    returns: '私聊文件下载链接。',
+    returnsSchema: {
+      type: 'object',
+      properties: { url: { type: 'string', description: '文件下载直链' } },
+      required: ['url'],
+    },
     // NapCat's `get_private_file_url` requires only file_id — it re-derives the
     // file hash by decoding its composite file_id and reading file10MMd5 off the
     // original message. SnowLuma's file_id is the bare fileUUID, so it relies on
@@ -180,8 +276,8 @@ export const actions = [
     // clients that only persist file_id, both user_id and file_hash are now
     // optional; file_hash falls through empty when absent. See issue #147.
     params: {
-      user_id: f.uint().optional(),
-      file_id: f.string({ allowEmpty: false }),
+      user_id: f.userId().optional(),
+      file_id: f.fileId(),
       file_hash: f.string().default(''),
     },
     run: async (p, ctx) => {

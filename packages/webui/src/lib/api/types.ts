@@ -4,7 +4,10 @@ import type {
   BackupImportResult,
   DebugActionDoc,
   DebugInvokeResult,
+  DebugStreamFrame,
   DebugStreamMessage,
+  DebugUploadResult,
+  GlobalSettings,
   HookProcessInfo,
   LogEntry,
   LogLevel,
@@ -151,6 +154,21 @@ export interface ApiClient {
   debug: {
     actions(): Promise<{ actions: DebugActionDoc[]; categories: { category: string; count: number }[] }>;
     invoke(uin: string, action: string, params: Record<string, unknown>): Promise<DebugInvokeResult>;
+    /** Invoke a Stream API action (or any action) and receive every frame.
+     *  Resolves when the stream ends; pass a signal to cancel. */
+    invokeStream(
+      uin: string,
+      action: string,
+      params: Record<string, unknown>,
+      onFrame: (frame: DebugStreamFrame) => void,
+      signal?: AbortSignal,
+    ): Promise<void>;
+    /** Stream a browser file to a temp path on the server; returns the path to
+     *  feed a send action. `onProgress` reports 0..1 of bytes uploaded. */
+    upload(
+      file: File,
+      opts?: { filename?: string; onProgress?: (fraction: number) => void; signal?: AbortSignal },
+    ): Promise<DebugUploadResult>;
     /** Live merged SSE; returns an unsubscribe. */
     stream(onMessage: (m: DebugStreamMessage) => void, onStatus?: (s: StreamStatus) => void): () => void;
   };
@@ -165,6 +183,14 @@ export interface ApiClient {
     recent(limit?: number): Promise<NotificationDeliveryRecord[]>;
     /** Fire a one-off test to a single channel by id. */
     test(channelId: string): Promise<{ success: boolean; message?: string; status?: number }>;
+  };
+
+  // ---- global deployment config (rkey fallback servers + musicSignUrl) ----
+  globalConfig: {
+    /** Fetch the all-accounts global settings (config/snowluma.json). Bearer-gated. */
+    get(): Promise<GlobalSettings>;
+    /** Persist global settings (section-merged + normalized server-side). */
+    save(config: Partial<GlobalSettings>): Promise<GlobalSettings>;
   };
 
   // ---- update check ----

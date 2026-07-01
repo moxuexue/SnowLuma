@@ -7,6 +7,13 @@ export interface ApiResponse {
   data: JsonValue;
   echo?: JsonValue;
   wording?: string;
+  /** Mirror of `wording` carried on Stream API frames — NapCat puts the
+   *  message text in BOTH `message` and `wording`, so clients reading either
+   *  key work. Only set on stream frames. */
+  message?: string;
+  /** Only set on Stream API frames — `'stream-action'`. Marks an envelope as
+   *  one frame of a multi-frame streaming response (NapCat Stream API wire). */
+  stream?: string;
 }
 
 export interface OneBotRequest {
@@ -82,11 +89,27 @@ export interface StatusCommandConfig {
   trigger: string;
 }
 
+/**
+ * Remote rkey fallback. QQ-NT image/file download URLs need a short-lived,
+ * server-issued `rkey`; SnowLuma fetches it via OIDB 0x9067_202. On accounts
+ * where that native fetch persistently returns nothing, every image would be
+ * served as a bare URL the CDN rejects with `invalid rkey` (#156). When
+ * `fallbackServers` is non-empty, SnowLuma asks those HTTP endpoints for an
+ * rkey instead. OFF by default (empty list): no third-party server is ever
+ * contacted unless you opt in by configuring your own endpoint.
+ */
+export interface RKeyConfig {
+  /**
+   * HTTP(S) endpoints returning `{ group_rkey, private_rkey, expired_time }`
+   * (NapCat rkey-server format; an OneBot `{ retcode, data }` wrapper is also
+   * accepted). Tried in order until one yields a usable rkey. Default `[]`.
+   */
+  fallbackServers: string[];
+}
+
 /** Per-UIN OneBot configuration. */
 export interface OneBotConfig {
   networks: OneBotNetworks;
-  /** Music card signing service URL (optional). */
-  musicSignUrl?: string;
   /** Built-in `#sl` status command settings. Always present after normalization. */
   statusCommand: StatusCommandConfig;
   /** Which GLOBAL notification channels this account opts into (channel ids are

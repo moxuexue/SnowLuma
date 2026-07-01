@@ -3,6 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import type { HookManager, HookProcessInfo } from '@snowluma/bridge';
 import { createLogger, getLogLevel, getRecentLogs, LOG_LEVELS, setLogLevel, subscribeLogs } from '@snowluma/common/logger';
 import { loadOneBotConfig, saveOneBotConfig } from '@snowluma/onebot/config';
+import { loadGlobalSettings, saveGlobalSettings } from '@snowluma/onebot/global-config';
 import type { OneBotManager } from '@snowluma/onebot/manager';
 import type { OneBotConfig, JsonObject as OneBotJsonObject } from '@snowluma/onebot/types';
 import { readRuntimeConfig, updateRuntimeConfig, resolveRuntimeEnvOverrides } from '@snowluma/common/runtime';
@@ -21,6 +22,7 @@ import { coerceSettingsPatch } from './system-settings';
 import { buildBackup, planRestore, validateBackup } from './backup';
 import { collectActionDocs, collectCategories } from '@snowluma/onebot/action-docs';
 import { createFramePusher } from './debug-stream';
+import { buildStreamInvokeResponse, streamUploadToDisk } from './debug-tools';
 import { bindStateStream } from './state-stream';
 import type { StateBus, StateResource } from './state-bus';
 import { startConnectionDiffLoop } from './connection-diff-loop';
@@ -928,6 +930,42 @@ export async function initWebUI(
     return c.json(result);
   });
 
+  // Invoke a Stream API action (or any action) and relay every frame to the
+  // browser over an SSE body. The frontend reads this with fetch()+a stream
+  // reader (Bearer auth in the header), so — unlike /api/debug/stream — it does
+  // NOT need a query-token allowlist entry. Frames are never dropped.
+  app.post('/api/debug/invoke-stream', async (c) => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({ status: 'failed', message: '请求格式错误' }, 400); }
+    const { uin, action, params } = (body ?? {}) as { uin?: unknown; action?: unknown; params?: unknown };
+    if (typeof uin !== 'string' || !UIN_REGEX.test(uin)) return c.json({ status: 'failed', message: '无效的账号' }, 400);
+    if (typeof action !== 'string' || !action) return c.json({ status: 'failed', message: 'action 必填' }, 400);
+    if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+      return c.json({ status: 'failed', message: 'params 必须是对象' }, 400);
+    }
+    const inst = oneBotManager.getInstance(uin);
+    if (!inst) return c.json({ status: 'failed', message: '账号不在线' }, 404);
+    const rawRequest = JSON.stringify({ action, params: params ?? {} });
+    return buildStreamInvokeResponse(
+      (rq, emit, alive) => inst.invokeStream(rq, emit, alive),
+      rawRequest,
+      c.req.raw.signal,
+    );
+  });
+
+  // Stream a browser-selected file to a temp path on THIS server (the bot runs
+  // here, not on the operator's machine), so the returned path can be fed to a
+  // send action's file/image/record/video param. Raw bytes in the body,
+  // `?filename=` for a human-readable suffix; streamed to disk with a byte cap.
+  app.post('/api/debug/upload', async (c) => {
+    try {
+      const result = await streamUploadToDisk(c.req.raw.body as ReadableStream<Uint8Array> | null, c.req.query('filename'));
+      return c.json({ status: 'ok', path: result.path, size: result.size });
+    } catch (err) {
+      return c.json({ status: 'failed', message: err instanceof Error ? err.message : '上传失败' }, 400);
+    }
+  });
+
   // Live merged SSE of OneBot events + action calls across all accounts. Taps
   // are attached only while a client is connected (on-demand). A slow client is
   // dropped (not back-pressured onto the bot) with a periodic drop marker.
@@ -1245,6 +1283,32 @@ export async function initWebUI(
         ? '测试发送成功'
         : `测试发送失败：${result.error ?? (result.status ? `HTTP ${result.status}` : '未知错误')}`,
     });
+  });
+
+  // ─── Global deployment config (config/snowluma.json) ─────────────────────
+  // All-accounts SnowLuma knobs (rkey fallback servers + musicSignUrl). Saving
+  // section-merges + normalizes server-side, then hot-reloads every instance.
+  app.get('/api/global-config', (c) => c.json({ config: loadGlobalSettings() }));
+
+  app.post('/api/global-config', async (c) => {
+    const declaredLen = Number(c.req.header('content-length'));
+    if (Number.isFinite(declaredLen) && declaredLen > 512 * 1024) {
+      return c.json({ success: false, message: '配置过大' }, 413);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ success: false, message: '请求格式错误' }, 400);
+    }
+    try {
+      const config = saveGlobalSettings(body);
+      oneBotManager.reloadGlobalSettings();
+      return c.json({ success: true, config });
+    } catch (err) {
+      log.warn('save global config failed: %s', err instanceof Error ? err.message : String(err));
+      return c.json({ success: false, message: '保存失败，请检查服务器日志' }, 500);
+    }
   });
 
   // ─── WebUI customization config (config/ui.json) ─────────────────────────
