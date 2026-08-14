@@ -57,6 +57,12 @@ export interface GetGroupHonorInfoParams extends GroupIdParams {
   type?: 'talkative' | 'performer' | 'legend' | 'strong_newbie' | 'emotion' | 'all' | string;
 }
 
+export interface GetGroupSystemMsgParams extends JsonObject {
+  group_id?: number;
+  only_pending?: boolean;
+  count?: number;
+}
+
 export interface DeleteFriendParams extends UserIdParams {
   block?: boolean;
 }
@@ -300,6 +306,18 @@ export interface SetMsgEmojiLikeParams extends JsonObject {
 
 export interface FetchCustomFaceParams extends JsonObject {
   count?: number;
+}
+
+export interface FetchSysFacesParams extends JsonObject {
+  refresh?: boolean;
+}
+
+export interface FetchFaceEntityParams extends FetchSysFacesParams {
+  face_id: number;
+}
+
+export interface SearchSysFacesParams extends JsonObject {
+  query: string;
 }
 
 export interface GetCollectionListParams extends JsonObject {

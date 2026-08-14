@@ -17,6 +17,8 @@ const log = createLogger('OneBot.Contacts');
 export interface GroupSystemMessageQuery {
   groupId?: number;
   onlyPending?: boolean;
+  /** Maximum records read from each QQ request inbox. */
+  count?: number;
 }
 
 export function getLoginInfo(ref: OneBotInstanceContext): { userId: number; nickname: string } {
@@ -68,8 +70,13 @@ export async function getGroupList(
     if (noCache || bridge.identity.groups.length === 0) {
       await bridge.apis.contacts.fetchGroupList();
     }
-  } catch {
-    // Use cached data.
+  } catch (err) {
+    if (noCache) throw err;
+    log.warn(
+      'group list refresh failed, using cached roster: uin=%s err=%s',
+      bridge.identity.uin,
+      err instanceof Error ? (err.stack ?? err.message) : String(err),
+    );
   }
   return bridge.identity.groups.map(g => ({
     group_id: g.groupId,
@@ -83,24 +90,36 @@ export async function getGroupList(
     group_create_time: g.createTime ?? 0,
     group_level: g.level ?? 0,
     group_memo: g.memo ?? '',
+    group_all_shut: g.allMuted ? -1 : 0,
   }));
 }
 
-// group_level lives only in the 0x88D_0 detail. Memoize it (short TTL) so a
-// joined-group get_group_info doesn't fetch the detail on every call (#197).
+// group_level lives only in the per-group detail response. Keep its existing
+// short cache, but read mutable group state from the roster refreshed above.
 const GROUP_LEVEL_TTL_MS = 5 * 60 * 1000;
 const groupLevelCache = new Map<number, { level: number; at: number }>();
-async function getGroupLevel(bridge: BridgeInterface, groupId: number, noCache?: boolean): Promise<number> {
+async function getGroupLevel(
+  bridge: BridgeInterface,
+  groupId: number,
+  noCache?: boolean,
+): Promise<number> {
   if (!noCache) {
-    const c = groupLevelCache.get(groupId);
-    if (c && Date.now() - c.at < GROUP_LEVEL_TTL_MS) return c.level;
+    const cached = groupLevelCache.get(groupId);
+    if (cached && Date.now() - cached.at < GROUP_LEVEL_TTL_MS) return cached.level;
   }
   try {
     const detail = await bridge.apis.contacts.fetchGroupDetail(groupId);
     const level = detail?.level ?? 0;
     groupLevelCache.set(groupId, { level, at: Date.now() });
     return level;
-  } catch {
+  } catch (err) {
+    if (noCache) throw err;
+    log.warn(
+      'group detail refresh failed, using roster metadata: uin=%s group=%d err=%s',
+      bridge.identity.uin,
+      groupId,
+      err instanceof Error ? (err.stack ?? err.message) : String(err),
+    );
     return 0;
   }
 }
@@ -110,7 +129,11 @@ async function getGroupLevel(bridge: BridgeInterface, groupId: number, noCache?:
 // here; this only memoizes the per-id server query so a burst of invites for the
 // same group doesn't hammer 0x88D_0 (which would risk a rate-limit / kick).
 const NON_MEMBER_GROUP_TTL_MS = 5 * 60 * 1000;
-const nonMemberGroupCache = new Map<number, { info: JsonObject; at: number }>();
+const nonMemberGroupCache = new Map<string, { info: JsonObject; at: number }>();
+
+function nonMemberGroupCacheKey(bridge: BridgeInterface, groupId: number): string {
+  return `${bridge.identity.uin}:${groupId}`;
+}
 
 export async function getGroupInfo(
   bridge: BridgeInterface,
@@ -120,8 +143,14 @@ export async function getGroupInfo(
   if (noCache || !bridge.identity.findGroup(groupId)) {
     try {
       await bridge.apis.contacts.fetchGroupList();
-    } catch {
-      // Use cached data.
+    } catch (err) {
+      if (noCache) throw err;
+      log.warn(
+        'group list refresh failed, using cached roster: uin=%s group=%d err=%s',
+        bridge.identity.uin,
+        groupId,
+        err instanceof Error ? (err.stack ?? err.message) : String(err),
+      );
     }
   }
   const g = bridge.identity.findGroup(groupId);
@@ -135,13 +164,15 @@ export async function getGroupInfo(
       group_create_time: g.createTime ?? 0,
       group_level: await getGroupLevel(bridge, groupId, noCache),
       group_memo: g.memo ?? '',
+      group_all_shut: g.allMuted ? -1 : 0,
     };
   }
 
   // Not a joined group — fall back to the by-id server lookup so a group invite
   // can still resolve its name. Cached with a short TTL (skipped when noCache).
+  const cacheKey = nonMemberGroupCacheKey(bridge, groupId);
   if (!noCache) {
-    const cached = nonMemberGroupCache.get(groupId);
+    const cached = nonMemberGroupCache.get(cacheKey);
     if (cached && Date.now() - cached.at < NON_MEMBER_GROUP_TTL_MS) return { ...cached.info };
   }
   try {
@@ -156,12 +187,19 @@ export async function getGroupInfo(
         group_create_time: detail.createTime ?? 0,
         group_level: detail.level ?? 0,
         group_memo: detail.memo ?? '',
+        group_all_shut: detail.allMuted ? -1 : 0,
       };
-      nonMemberGroupCache.set(groupId, { info, at: Date.now() });
+      nonMemberGroupCache.set(cacheKey, { info, at: Date.now() });
       return { ...info };
     }
-  } catch {
-    // Server lookup failed (no such group / denied) — fall through to null.
+  } catch (err) {
+    if (noCache) throw err;
+    log.warn(
+      'non-member group lookup failed: uin=%s group=%d err=%s',
+      bridge.identity.uin,
+      groupId,
+      err instanceof Error ? (err.stack ?? err.message) : String(err),
+    );
   }
   return null;
 }
@@ -294,10 +332,11 @@ async function resolveRequesterUins(
   const unresolved = new Set<string>();
 
   for (const request of requests) {
-    const uid = request.targetUid;
+    const actor = groupRequestActor(request);
+    const uid = actor.uid;
     if (!uid || resolved.has(uid)) continue;
-    if (request.targetUin > 0) {
-      resolved.set(uid, request.targetUin);
+    if (actor.uin > 0) {
+      resolved.set(uid, actor.uin);
       unresolved.delete(uid);
       continue;
     }
@@ -329,27 +368,66 @@ async function resolveRequesterUins(
   return resolved;
 }
 
+function groupRequestActor(request: GroupRequestInfo): {
+  uid: string;
+  uin: number;
+  name: string;
+} {
+  if (request.notifyType === 1) {
+    return {
+      uid: request.invitorUid,
+      uin: request.invitorUin,
+      name: request.invitorName,
+    };
+  }
+  return {
+    uid: request.targetUid,
+    uin: request.targetUin,
+    name: request.targetName,
+  };
+}
+
 export async function getGroupSystemMessages(
   bridge: BridgeInterface,
   query: GroupSystemMessageQuery = {},
 ): Promise<JsonObject[]> {
-  const requests = (await bridge.apis.contacts.fetchGroupRequests()).filter((request) => {
+  const count = query.count ?? 50;
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100) {
+    throw new Error(`invalid group-system-message count: ${count}`);
+  }
+  const [main, filtered] = await Promise.all([
+    bridge.apis.contacts.fetchGroupRequests(false, count),
+    bridge.apis.contacts.fetchGroupRequests(true, count),
+  ]);
+  const unique = new Map<string, GroupRequestInfo>();
+  for (const request of [...main, ...filtered]) {
+    if (request.notifyType !== undefined
+      && request.notifyType !== 1
+      && request.notifyType !== 7) continue;
+    if (request.eventType <= 0) continue;
+    const flag = formatGroupRequestFlag(request);
+    if (!unique.has(flag)) unique.set(flag, request);
+  }
+  const requests = [...unique.values()].filter((request) => {
     if (query.groupId !== undefined && request.groupId !== query.groupId) return false;
     if (query.onlyPending && request.state !== 1) return false;
     return true;
   });
   const requesterUins = await resolveRequesterUins(bridge, requests);
 
-  return requests.map((request) => ({
-    group_id: request.groupId,
-    group_name: request.groupName,
-    request_id: request.sequence,
-    requester_uin: requesterUins.get(request.targetUid) ?? request.targetUin,
-    requester_nick: request.targetName,
-    message: request.comment,
-    checked: request.state !== 1,
-    flag: formatGroupRequestFlag(request),
-  }));
+  return requests.map((request) => {
+    const actor = groupRequestActor(request);
+    return {
+      group_id: request.groupId,
+      group_name: request.groupName,
+      request_id: request.sequence,
+      requester_uin: requesterUins.get(actor.uid) ?? actor.uin,
+      requester_nick: actor.name,
+      message: request.comment,
+      checked: request.state !== 1,
+      flag: formatGroupRequestFlag(request),
+    };
+  });
 }
 
 export async function getDownloadRKeys(bridge: BridgeInterface): Promise<JsonObject[]> {
@@ -395,6 +473,7 @@ function formatGroupMember(
     age: 0,
     join_time: member.joinTime,
     last_sent_time: member.lastSentTime,
+    shut_up_timestamp: member.shutUpTime,
     level: String(member.level),
     role: member.role,
     title: member.title,

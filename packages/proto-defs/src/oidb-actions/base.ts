@@ -56,6 +56,43 @@ export interface Oidb0x89a_0Search {
   settings?: pb<2, Oidb0x89a_0SearchSettings>;
   field12?:  pb<12, uint_32>;
 }
+// 0x89A_0 — member invitation policy. The three settings tags are the
+// GroupDetailInfoV2 fields emitted by QQ's EncodeModifyGroupDetailInfoParam:
+// appPrivilegeFlag=23, appPrivilegeMask=24, allowMemberInvite=29.
+export interface Oidb0x89a_0InvitePolicySettings {
+  // All three values can legitimately be zero and still have to be present.
+  appPrivilegeFlag?: pb_optional<23, uint_32>;
+  appPrivilegeMask?: pb_optional<24, uint_32>;
+  allowMemberInvite?: pb_optional<29, uint_32>;
+}
+export interface Oidb0x89a_0InvitePolicy {
+  groupUin?: pb<1, uint_64>;
+  settings?: pb<2, Oidb0x89a_0InvitePolicySettings>;
+  field12?:  pb<12, uint_32>;
+}
+// 0x89A_0 — whether newly joined members may browse group history. Current QQ's
+// GroupDetailInfoV2 encoder emits groupFlagExt4=42 and its mutation mask=43.
+export interface Oidb0x89a_0HistoryVisibilitySettings {
+  // Explicit presence is required when clearing the only selected bit.
+  groupFlagExt4?:     pb_optional<42, uint_32>;
+  groupFlagExt4Mask?: pb_optional<43, uint_32>;
+}
+export interface Oidb0x89a_0HistoryVisibility {
+  groupUin?: pb<1, uint_64>;
+  settings?: pb<2, Oidb0x89a_0HistoryVisibilitySettings>;
+  field12?:  pb<12, uint_32>;
+}
+// 0x89A_0 — one masked group-member capability update. These are deny bits,
+// so callers clear the selected bit to allow a capability and set it to deny.
+export interface Oidb0x89a_0MemberPermissionSettings {
+  appPrivilegeFlag?: pb_optional<23, uint_32>;
+  appPrivilegeMask?: pb_optional<24, uint_32>;
+}
+export interface Oidb0x89a_0MemberPermission {
+  groupUin?: pb<1, uint_64>;
+  settings?: pb<2, Oidb0x89a_0MemberPermissionSettings>;
+  field12?:  pb<12, uint_32>;
+}
 export interface OidbKickMember {
   groupUin?:         pb<1, uint_32>;
   targetUid?:        pb<3, string>;
@@ -180,7 +217,7 @@ export interface OidbLike {
 }
 export interface OidbGroupRequestList {
   count?:  pb<1, uint_32>;
-  field2?: pb<2, uint_32>;
+  field2?: pb<2, uint_64>;
 }
 export interface OidbUserInfoKey {
   key?: pb<1, uint_32>;
@@ -315,6 +352,13 @@ export interface OidbGroupDetailFlags {
   question?:        pb<24, bool>;
   answer?:          pb<25, string>;
   maxAdminCount?:   pb<29, string>;
+  // Official request mask for group shutup expire (proto tag 45 → 60027).
+  // Lagrange's tag 59 requests 60259, which is a different field.
+  shutUpAllTimestamp?: pb<45, bool>;
+  /** Current complete app privilege bitfield; needed for masked mutations. */
+  privilegeFlag?:   pb<99, bool>;
+  /** Current complete groupFlagExt4 bitfield; needed for masked mutations. */
+  groupFlagExt4?:   pb<101, bool>;
 }
 export interface OidbGroupDetailConfig {
   uin?:   pb<1, uint_64>;
@@ -497,28 +541,55 @@ export interface OidbSetProfile {
   stringProfiles?: pb_repeated<2, OidbProfileStringItem>;
   intProfiles?:    pb_repeated<3, OidbProfileIntItem>;
 }
-export interface Oidb0x7edInteraction {
+export interface Oidb0x7edUserInfo {
+  uid?:                pb<1, string>;
+  src?:                pb<2, uint_32>;
+  latestTime?:         pb<3, uint_32>;
+  count?:              pb<4, uint_32>;
+  giftCount?:          pb<5, uint_32>;
+  customId?:           pb<6, uint_32>;
+  lastCharged?:        pb<8, uint_32>;
+  availableCount?:     pb<21, uint_32>;
+  todayVotedCount?:    pb<22, uint_32>;
+  nick?:               pb<101, string>;
+  gender?:             pb<102, uint_32>;
+  age?:                pb<103, uint_32>;
+  isFriend?:           pb<104, bool>;
+  isVip?:              pb<105, bool>;
+  isSvip?:             pb<106, bool>;
+}
+export interface Oidb0x7edFavoriteInfo {
   totalCount?: pb<1, uint_32>;
-  newCount?:   pb<2, uint_32>;
+  lastTime?:   pb<2, uint_32>;
   todayCount?: pb<3, uint_32>;
-  lastTime?:   pb<4, uint_64>;
+  userInfos?:  pb_repeated<4, Oidb0x7edUserInfo>;
+}
+export interface Oidb0x7edVoteInfo {
+  totalCount?:      pb<1, uint_32>;
+  newCount?:        pb<2, uint_32>;
+  newNearbyCount?:  pb<3, uint_32>;
+  lastVisitTime?:   pb<4, uint_32>;
+  userInfos?:       pb_repeated<5, Oidb0x7edUserInfo>;
 }
 export interface Oidb0x7edUserLikeInfo {
   uid?:          pb<1, string>;
-  time?:         pb<2, uint_64>;
-  favoriteInfo?: pb<3, Oidb0x7edInteraction>;
-  voteInfo?:     pb<4, Oidb0x7edInteraction>;
+  time?:         pb<2, uint_32>;
+  favoriteInfo?: pb<3, Oidb0x7edFavoriteInfo>;
+  voteInfo?:     pb<4, Oidb0x7edVoteInfo>;
 }
 export interface Oidb0x7edReq {
-  targetUid?: pb<1, string>;
-  basic?:     pb<2, uint_32>;
-  vote?:      pb<3, uint_32>;
-  favorite?:  pb<4, uint_32>;
-  start?:     pb<12, uint_32>;
-  limit?:     pb<103, uint_32>;
+  targetUids?: pb_repeated<1, string>;
+  basic?:      pb<2, uint_32>;
+  vote?:       pb<3, uint_32>;
+  favorite?:   pb<4, uint_32>;
+  userProfile?: pb<101, uint_32>;
+  start?:      pb<102, uint_32>;
+  limit?:      pb<103, uint_32>;
 }
 export interface Oidb0x7edResp {
   userLikeInfos?: pb_repeated<1, Oidb0x7edUserLikeInfo>;
+  friendMaxVotes?: pb<2, uint_32>;
+  start?:          pb<101, int_32>;
 }
 export interface Oidb0x8a7Req {
   basic1?:  pb<1, uint_32>;
@@ -665,8 +736,10 @@ export interface CustomFaceModifyBody {
 // 0x902e modify 响应：f1=retcode, f2=errmsg, f3=opType, f4 repeated 受影响条目
 // {f1:{emojiId,md5}, f3:desc}（含改后 desc）。
 export interface CustomFaceModifyRespEntry {
-  emoji?: pb<1, CustomFaceOpEmojiEntry>;
-  desc?:  pb<3, string>;
+  emoji?:      pb<1, CustomFaceOpEmojiEntry>;
+  /** Older QQ builds return the description in tag 2. */
+  legacyDesc?: pb<2, string>;
+  desc?:       pb<3, string>;
 }
 export interface CustomFaceModifyResp {
   retCode?: pb<1, uint_32>;
@@ -911,6 +984,64 @@ export interface OidbGroupTodo {
   groupUin?: pb<1, uint_32>;
   msgSeq?:   pb<2, uint_64>;
 }
+// 0x9474_0 — query group top banners. A request flag of 1 selects group
+// todos; current QQ represents them with commonBanner while older responses
+// may still use the legacy todoBanner shape.
+export interface OidbQueryGroupTopBannersReq {
+  groupId?:    pb<1, uint_64>;
+  bannerFlag?: pb<2, uint_32>;
+}
+export interface OidbGroupTopBannerUi {
+  iconUrl?:         pb<1, string>;
+  preText?:         pb<2, string>;
+  text?:            pb<3, string>;
+  highText?:        pb<4, string>;
+  accessoryType?:   pb<5, uint_32>;
+  iconColor?:       pb<6, uint_32>;
+  needTranslation?: pb<7, bool>;
+}
+export interface OidbGroupTopBannerJumpInfo {
+  jumpType?:  pb<1, uint_32>;
+  jumpUrl?:   pb<2, string>;
+  jumpParam?: pb<3, bytes>;
+}
+export interface OidbGroupTopBannerCommon {
+  ui?:         pb<1, OidbGroupTopBannerUi>;
+  jumpInfo?:   pb<2, OidbGroupTopBannerJumpInfo>;
+  createTime?: pb<3, uint_64>;
+  updateTime?: pb<4, uint_64>;
+}
+export interface OidbGroupTodoLegacyBanner {
+  redText?:     pb<1, string>;
+  text?:        pb<2, string>;
+  url?:         pb<3, string>;
+  isExposure?:  pb<4, bool>;
+  isComplete?:  pb<5, bool>;
+}
+export interface OidbGroupTopBannerPriority {
+  categoryType?: pb<1, uint_32>;
+  priority?:     pb<2, int_32>;
+}
+export interface OidbOnlineBanner {
+  bizType?:             pb<1, uint_32>;
+  bannerType?:          pb<2, uint_32>;
+  msgId?:               pb<3, bytes>;
+  isDisappear?:         pb<4, bool>;
+  expireTime?:          pb<8, uint_64>;
+  todoBanner?:          pb<12, OidbGroupTodoLegacyBanner>;
+  commonBanner?:        pb<20, OidbGroupTopBannerCommon>;
+  bannerPriority?:      pb<40, OidbGroupTopBannerPriority>;
+  bizId?:               pb<41, int_32>;
+  priority?:            pb<42, int_32>;
+  leftShowTimes?:       pb<43, int_32>;
+  supportMultiBanners?: pb<44, bool>;
+  supportLongPress?:    pb<45, bool>;
+  noNeedReportShow?:    pb<46, bool>;
+}
+export interface OidbQueryGroupTopBannersResp {
+  banners?: pb_repeated<1, OidbOnlineBanner>;
+  newSeq?:  pb<3, uint_64>;
+}
 export interface OidbStrangerStatusKey {
   key?: pb<1, uint_32>;
 }
@@ -943,12 +1074,17 @@ export interface OidbSetFriendRemarkResponse {
 export interface OidbClearFriendRemark {
   target?: pb<1, OidbFriendRemarkTarget>;
 }
-export interface OidbStrangerStatusRespStatus {
+export interface OidbStrangerStatusRespProperty {
   key?:   pb<1, uint_32>;
   value?: pb<2, uint_64>;
 }
+export interface OidbStrangerStatusRespProperties {
+  entries?: pb_repeated<1, OidbStrangerStatusRespProperty>;
+}
 export interface OidbStrangerStatusRespData {
-  status?: pb<2, OidbStrangerStatusRespStatus>;
+  targetUin?:  pb<1, uint_32>;
+  properties?: pb<2, OidbStrangerStatusRespProperties>;
+  uin?:        pb<3, uint_32>;
 }
 export interface OidbStrangerStatusResp {
   data?: pb<1, OidbStrangerStatusRespData>;

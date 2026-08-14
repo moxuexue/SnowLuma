@@ -57,6 +57,8 @@ export interface QQGroupInfo {
   level?: number;
   /** Group memo / announcement preview. '' when unknown (#197). */
   memo?: string;
+  /** Whether group-wide mute is currently in effect (expire still in the future). */
+  allMuted?: boolean;
 }
 
 export interface GroupRequestInfo {
@@ -73,6 +75,9 @@ export interface GroupRequestInfo {
   operatorName: string;
   sequence: number;
   state: number;
+  /** High-level notification type returned by the request list. */
+  notifyType?: number;
+  /** 0x10C8 operation discriminator derived from notifyType. */
   eventType: number;
   comment: string;
   filtered: boolean;

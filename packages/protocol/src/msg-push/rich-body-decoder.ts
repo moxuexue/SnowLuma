@@ -7,6 +7,7 @@ import type {
   FileInfo,
   GroupFileExtra,
   IndexNode,
+  InlineKeyboardExtra,
   MentionExtra,
   MsgInfo,
   NotOnlineImage,
@@ -217,6 +218,92 @@ function decodeBigFacesOnce(elems: ElemDecoded[]): Map<ElemDecoded, QFaceExtra |
   return decoded;
 }
 
+const MARKDOWN_BUSINESS_TYPES: ReadonlySet<number> = new Set([1, 3, 4]);
+const INLINE_KEYBOARD_SERVICE_TYPES: ReadonlySet<number> = new Set([46, 50, 51]);
+
+function decodeMarkdownCommonElement(pbElem: Uint8Array, businessType: number): MessageElement | null {
+  const md = decodeProtobufPayload(
+    'commonElem.markdown',
+    pbElem,
+    () => protobuf_decode<MarkdownData>(pbElem),
+  );
+  const content = md?.content ?? '';
+  // Business type 3 carries the 闪传 card. Current NT puts fileset identity
+  // on extType=1 / extInfo (DecodeMdExtInfoFileTransfer); older cards only
+  // have it inside the richui JSON. If the payload looks like FlashTransfer
+  // but has no fileset, fail open to the sibling compatibility text.
+  if (md && businessType === 3 && isFlashTransferMarkdown(md, content)) {
+    return decodeFlashTransfer(md);
+  }
+  if (!content) return null;
+  return { type: 'markdown', text: content };
+}
+
+function decodeMarkdownElementsOnce(elems: ElemDecoded[]): Map<ElemDecoded, MessageElement | null> {
+  const decoded = new Map<ElemDecoded, MessageElement | null>();
+  for (const elem of elems) {
+    const ce = elem.commonElem;
+    const businessType = ce?.businessType ?? 0;
+    if (ce?.serviceType !== 45 || !MARKDOWN_BUSINESS_TYPES.has(businessType) || !ce.pbElem?.length) {
+      continue;
+    }
+    decoded.set(elem, decodeMarkdownCommonElement(ce.pbElem, businessType));
+  }
+  return decoded;
+}
+
+function decodeInlineKeyboardCommonElement(pbElem: Uint8Array): MessageElement | null {
+  const extra = decodeProtobufPayload(
+    'commonElem.inlineKeyboard',
+    pbElem,
+    () => protobuf_decode<InlineKeyboardExtra>(pbElem),
+  );
+  const keyboard = extra?.keyboard;
+  if (!keyboard) return null;
+
+  return {
+    type: 'inline_keyboard',
+    botAppid: String(keyboard.botAppid ?? 0),
+    rows: (keyboard.rows ?? []).map((row) => ({
+      buttons: (row.buttons ?? []).map((button) => {
+        const render = button.renderData;
+        const action = button.action;
+        const permission = action?.permission;
+        return {
+          id: button.id ?? '',
+          label: render?.label ?? '',
+          visitedLabel: render?.visitedLabel ?? '',
+          style: render?.style ?? 0,
+          type: action?.type ?? 0,
+          clickLimit: action?.clickLimit ?? 0,
+          unsupportedTips: action?.unsupportedTips ?? '',
+          data: action?.data ?? '',
+          atBotShowChannelList: action?.atBotShowChannelList ?? false,
+          permissionType: permission?.type ?? 0,
+          specifyRoleIds: permission?.specifyRoleIds ?? [],
+          specifyUserIds: permission?.specifyUserIds ?? [],
+          isReply: action?.reply ?? false,
+          enter: action?.enter ?? false,
+          anchor: action?.anchor ?? 0,
+        };
+      }),
+    })),
+  };
+}
+
+function decodeInlineKeyboardsOnce(elems: ElemDecoded[]): Map<ElemDecoded, MessageElement | null> {
+  const decoded = new Map<ElemDecoded, MessageElement | null>();
+  for (const elem of elems) {
+    const ce = elem.commonElem;
+    if (!ce || !INLINE_KEYBOARD_SERVICE_TYPES.has(ce.serviceType ?? 0)
+      || ce.businessType !== 1 || !ce.pbElem?.length) {
+      continue;
+    }
+    decoded.set(elem, decodeInlineKeyboardCommonElement(ce.pbElem));
+  }
+  return decoded;
+}
+
 function logUnknownWireMetadata(
   value: unknown,
   path: string,
@@ -387,26 +474,20 @@ export function decodeRichBody(body: PushMsgBody | undefined, isGroup: boolean):
 
 function convertElements(elems: ElemDecoded[]): MessageElement[] {
   const result: MessageElement[] = [];
-  // [#146] A QQ mini-program / ark share (B站 video, QQ 小程序, …) arrives as a
-  // `lightApp`/`richMsg` card element plus a plain `text` element carrying QQ's
-  // graceful-degradation compat string ("当前QQ版本不支持此应用，请升级") — the text
-  // protocol-old clients render instead of the card. The text element has NO wire
-  // marker distinguishing it (confirmed on-target: no pbReserve / attr6Buf), and
-  // the receiver binary contains none of these strings, so QQ does NOT match by
-  // content. Instead QQ NT's kernel codec (msg_codec_mgr) collapses the message
-  // to a single ark element — the sibling text is never emitted (verified by RE:
-  // wrapper.linux.node has no fallback strings; NapCat maps kernel elements 1:1
-  // with no ark-aware skip yet surfaces only the card). We mirror that structural
-  // rule: when a card is present, drop sibling plain `text`. `@`/reply/face etc.
-  // are not plain text and survive. `richMsg` covers json (svc=1) and xml (svc=35)
-  // cards alike.
-  // Only a card that can actually decode is allowed to suppress QQ's sibling
-  // compatibility text. Field presence alone is insufficient: a malformed
-  // card must fail open and preserve its otherwise-valid text sibling.
+  // [#146/#337] Rich cards and bot markdown arrive beside a plain compatibility
+  // `text` element for older clients. That sibling has no independent wire
+  // marker; QQ NT's codec structurally collapses the pair to the rich element.
+  // Mirror that rule only after the rich payload decodes successfully, so a
+  // malformed payload fails open and preserves its readable fallback text.
+  // Structural @/reply/face elements are not plain text and always survive.
   const decodedCards = decodeCardsOnce(elems);
   const decodedBigFaces = decodeBigFacesOnce(elems);
-  const hasCard = [...decodedCards.values()].some((cards) => (
+  const decodedMarkdown = decodeMarkdownElementsOnce(elems);
+  const decodedInlineKeyboards = decodeInlineKeyboardsOnce(elems);
+  const hasRichContent = [...decodedCards.values()].some((cards) => (
     Boolean(cards.rich?.element || cards.light?.element)
+  )) || [...decodedMarkdown.values()].some((element) => (
+    element?.type === 'markdown' || element?.type === 'flash_file'
   ));
   // QQ NT serializes a service-37 big face as the CommonElem followed by a
   // compatibility TextElem. The latter repeats QFaceExtra.text in `str`, while
@@ -537,9 +618,8 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
           result.push(me);
         } else {
           const text = t.str ?? '';
-          // [#146] drop QQ's ark-compat fallback text — structurally, like the
-          // kernel codec: a card message collapses to just the card element.
-          if (text && hasCard) continue;
+          // Drop the successfully decoded card/markdown compatibility sibling.
+          if (text && hasRichContent) continue;
           if (text) result.push({ type: 'text', text });
         }
       }
@@ -816,12 +896,11 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
           result.push({ type: 'face', faceId: extra.qsid });
         }
       } else if (svcType === 45 && ce.pbElem && ce.pbElem.length > 0) {
-        // Markdown commonElem. Older QQ clients (≤9.9.30) deliver a 闪传 (flash
-        // transfer) file as a richui markdown card (busId=FlashTransfer); newer
-        // clients send a plain text+link message that decodes elsewhere. Pull
-        // the flash fields out so the message isn't dropped to empty (#199/#200).
-        const flash = decodeFlashTransferCard(ce.pbElem);
-        if (flash) result.push(flash);
+        const markdown = decodedMarkdown.get(elem);
+        if (markdown) result.push(markdown);
+      } else if (INLINE_KEYBOARD_SERVICE_TYPES.has(svcType) && bizType === 1 && ce.pbElem?.length) {
+        const keyboard = decodedInlineKeyboards.get(elem);
+        if (keyboard) result.push(keyboard);
       }
 
       // Route predicates alone are not proof that a payload decoded. Log any
@@ -862,14 +941,14 @@ function convertElements(elems: ElemDecoded[]): MessageElement[] {
 }
 
 /**
- * Decode a 闪传 richui markdown commonElem (svc=45) into a `flash_file`
- * element. The pbElem is a `MarkdownData` whose `content` is a markdown link
- * `[闪传](mqqapi://markdown/node?nodeType=richui&json=<url-encoded JSON>)`; the
- * JSON's `busId` is `FlashTransfer`. Field NAMES (fileSetId / sceneType /
- * title) were confirmed against QQ NT's flash-transfer manager in
- * wrapper.node.i64; the exact nesting is unknown (the card is built by the
- * sender's client), so we search recursively rather than pin a path. Returns
- * null for any non-flash markdown. See #199 / #200.
+ * Decode a 闪传 markdown commonElem (svc=45, biz=3) into `flash_file`.
+ *
+ * Current NT (DecodeMarkdownElement + DecodeMdExtInfoFileTransfer, #358):
+ *   extType=1, extInfo.filesetId / name; click scheme also carries
+ *   `mqqrouter://flash_transfer/open_fileset?fileset_id=`.
+ * Older cards (#199/#200): only the richui JSON `data.fileSetId`.
+ * Field names on the JSON card are searched recursively because the
+ * sender builds that blob; extInfo tags are fixed.
  */
 function deepFindValue(obj: unknown, keys: readonly string[], depth = 0): unknown {
   if (depth > 8 || obj === null || typeof obj !== 'object') return undefined;
@@ -885,35 +964,117 @@ function deepFindValue(obj: unknown, keys: readonly string[], depth = 0): unknow
   return undefined;
 }
 
-function decodeFlashTransferCard(pbElem: Uint8Array): MessageElement | null {
-  const md = decodeProtobufPayload(
-    'commonElem.flashTransfer',
-    pbElem,
-    () => protobuf_decode<MarkdownData>(pbElem),
-  );
-  const content = md?.content ?? '';
-  if (!content.includes('FlashTransfer')) return null;
-  const m = content.match(/[?&]json=([^)\s]+)/);
-  if (!m) return null;
-  let obj: unknown;
+function isFlashTransferMarkdown(md: MarkdownData | null | undefined, content: string): boolean {
+  if (md?.extType === 1 && md.extInfo?.filesetId) return true;
+  return content.includes('FlashTransfer') || content.includes('flash_transfer');
+}
+
+function parseQueryValue(text: string, key: string): string {
+  const m = text.match(new RegExp(`[?&]${key}=([^&\\s"']+)`));
+  if (!m) return '';
   try {
-    obj = JSON.parse(decodeURIComponent(m[1]));
+    return decodeURIComponent(m[1]).trim();
   } catch {
+    return m[1].trim();
+  }
+}
+
+function collectSchemeFields(obj: unknown): { filesetId: string; sceneType: number | undefined } {
+  const schemes: string[] = [];
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 8 || value == null) return;
+    if (typeof value === 'string') {
+      if (value.includes('fileset_id=') || value.includes('open_fileset')) schemes.push(value);
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const child of Object.values(value as Record<string, unknown>)) walk(child, depth + 1);
+    }
+  };
+  walk(obj, 0);
+  for (const scheme of schemes) {
+    const filesetId = parseQueryValue(scheme, 'fileset_id');
+    if (!filesetId) continue;
+    const rawScene = parseQueryValue(scheme, 'scene_type');
+    const n = Number(rawScene);
+    return {
+      filesetId,
+      sceneType: rawScene && Number.isSafeInteger(n) && n >= 0 ? n : undefined,
+    };
+  }
+  return { filesetId: '', sceneType: undefined };
+}
+
+function parseFlashTransferCard(content: string): {
+  filesetId: string;
+  fileName: string;
+  sceneType: number | undefined;
+} | null {
+  const m = content.match(/[?&]json=([^)\s]+)/);
+  let obj: unknown;
+  let decodedJson = '';
+  if (m) {
+    try {
+      decodedJson = decodeURIComponent(m[1]);
+    } catch {
+      decodedJson = m[1];
+    }
+    try {
+      obj = JSON.parse(decodedJson);
+    } catch {
+      obj = undefined;
+    }
+  }
+
+  const fromKeys = obj
+    ? String(deepFindValue(obj, ['fileSetId', 'filesetId', 'fileset_id', 'file_set_id']) ?? '').trim()
+    : '';
+  const fromScheme = obj ? collectSchemeFields(obj) : { filesetId: '', sceneType: undefined };
+  const fromRaw = {
+    filesetId: parseQueryValue(decodedJson, 'fileset_id'),
+    sceneType: Number(parseQueryValue(decodedJson, 'scene_type')),
+  };
+  const filesetId = fromKeys || fromScheme.filesetId || fromRaw.filesetId;
+  if (!filesetId && obj && deepFindValue(obj, ['busId']) !== 'FlashTransfer' && !content.includes('flash_transfer')) {
     return null;
   }
-  if (deepFindValue(obj, ['busId']) !== 'FlashTransfer') return null;
-  const filesetId = deepFindValue(obj, ['fileSetId', 'filesetId', 'fileset_id', 'file_set_id']);
-  const title = deepFindValue(obj, ['title', 'fileName', 'name']);
-  const sceneType = deepFindValue(obj, ['sceneType', 'scene_type']);
-  const normalizedFilesetId = filesetId != null ? String(filesetId).trim() : '';
-  if (!normalizedFilesetId) return null;
-  const normalizedSceneType = sceneType == null ? 0 : Number(sceneType);
-  if (!Number.isSafeInteger(normalizedSceneType) || normalizedSceneType < 0) return null;
+
+  const title = obj ? deepFindValue(obj, ['title', 'fileName', 'name']) : undefined;
+  const rawScene = obj ? deepFindValue(obj, ['sceneType', 'scene_type']) : undefined;
+  let sceneType: number | undefined;
+  if (rawScene != null && rawScene !== '') {
+    const n = Number(rawScene);
+    if (Number.isSafeInteger(n) && n >= 0) sceneType = n;
+  }
+  if (sceneType == null) sceneType = fromScheme.sceneType;
+  if (sceneType == null && Number.isSafeInteger(fromRaw.sceneType) && fromRaw.sceneType >= 0 && parseQueryValue(decodedJson, 'scene_type')) {
+    sceneType = fromRaw.sceneType;
+  }
+
+  return {
+    filesetId,
+    fileName: title != null ? String(title) : '',
+    sceneType,
+  };
+}
+
+function decodeFlashTransfer(md: MarkdownData): MessageElement | null {
+  const ext = md.extType === 1 ? md.extInfo : undefined;
+  const card = parseFlashTransferCard(md.content ?? '');
+  const filesetId = (ext?.filesetId ?? card?.filesetId ?? '').trim();
+  if (!filesetId) return null;
+
+  let fileName = (ext?.name ?? '').trim();
+  if (!fileName) fileName = (card?.fileName ?? '').trim();
+  if (!fileName && md.summary) {
+    fileName = md.summary.replace(/^\[QQ闪传\]\s*/, '').trim();
+  }
+
   return {
     type: 'flash_file',
-    filesetId: normalizedFilesetId,
-    fileName: title != null ? String(title) : '',
-    sceneType: normalizedSceneType,
+    filesetId,
+    fileName,
+    sceneType: card?.sceneType ?? 0,
   };
 }
 

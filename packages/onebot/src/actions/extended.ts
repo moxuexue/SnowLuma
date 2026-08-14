@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { FriendDressError } from '@snowluma/protocol/web/friend-dress';
+import { formatGroupRequestFlag } from '@snowluma/protocol/qq-info';
 import type {
   GroupEssenceContent,
   GroupEssenceMessage,
@@ -16,10 +17,38 @@ import {
   type MessageMeta,
 } from '../types';
 import { defineAction, groupAction, groupUserAction, f } from '../action-kit';
+import { groupInfoReturnsSchema } from './group-info';
 import { GROUP_MESSAGE_EVENT, hashMessageIdInt32 } from '../message-id';
 
 const DOWNLOAD_FILE_MAX_BYTES = 1024 * 1024 * 1024; // 1 GiB
 const DOWNLOAD_FILE_TIMEOUT_MS = 60_000;
+
+const profileLikeUserSchema = {
+  type: 'object',
+  properties: {
+    uid: { type: 'string', description: '用户 uid' },
+    uin: { type: 'integer', description: '用户 QQ 号；资料中没有有效号码时为 0' },
+    src: { type: 'integer', description: '来源类型' },
+    latestTime: { type: 'integer', description: '最近互动时间戳' },
+    count: { type: 'integer', description: '互动次数' },
+    giftCount: { type: 'integer', description: '礼物数量' },
+    customId: { type: 'integer', description: '自定义标识' },
+    lastCharged: { type: 'integer', description: '最近充能时间' },
+    bAvailableCnt: { type: 'integer', description: '可用次数' },
+    bTodayVotedCnt: { type: 'integer', description: '今日已点赞次数' },
+    nick: { type: 'string', description: '昵称' },
+    gender: { type: 'integer', description: '性别' },
+    age: { type: 'integer', description: '年龄' },
+    isFriend: { type: 'boolean', description: '是否为好友' },
+    isvip: { type: 'boolean', description: '是否为会员' },
+    isSvip: { type: 'boolean', description: '是否为超级会员' },
+  },
+  required: [
+    'uid', 'uin', 'src', 'latestTime', 'count', 'giftCount', 'customId',
+    'lastCharged', 'bAvailableCnt', 'bTodayVotedCnt', 'nick', 'gender',
+    'age', 'isFriend', 'isvip', 'isSvip',
+  ],
+};
 
 function essenceNumber(value: unknown, field: string): number {
   if (typeof value !== 'number'
@@ -1005,7 +1034,7 @@ export const actions = [
           actor: { type: 'integer', description: '处理人 QQ 号' },
           invitor_uin: { type: 'integer', description: '邀请人 QQ 号' },
           invitor_nick: { type: 'string', description: '邀请人昵称' },
-          flag: { type: 'string', description: '处理用 flag（eventType:groupId:targetUid:filtered）' },
+          flag: { type: 'string', description: '处理请求使用的规范 flag' },
         },
         required: ['group_id', 'group_name', 'request_id', 'requester_uin', 'requester_nick', 'message', 'checked', 'actor', 'invitor_uin', 'invitor_nick', 'flag'],
       },
@@ -1024,13 +1053,13 @@ export const actions = [
         actor: r.operatorUin,
         invitor_uin: r.invitorUin,
         invitor_nick: r.invitorName,
-        flag: `${r.eventType}:${r.groupId}:${r.targetUid}:filtered`,
+        flag: formatGroupRequestFlag(r),
       })));
     },
   }),
 
   // NapCat 对“被忽略通知中属于入群请求的子集”的命名（notify type == 7）。
-  // 这里把经过过滤的 0x10c8_2 每一项映射成 NapCat 结构。
+  // 这里把经过过滤的申请收件箱项目映射成 NapCat 结构。
   // eventType 已经在当前流水线中编码了请求类别。
   defineAction({
     name: 'get_group_ignore_add_request',
@@ -1148,7 +1177,7 @@ export const actions = [
     name: 'get_profile_like',
     summary: '获取资料点赞',
     readOnly: true,
-    returns: '点赞资料：uid、最近点赞时间、收藏（favoriteInfo）与点赞（voteInfo）统计。',
+    returns: '点赞资料：uid、最近点赞时间、收藏与点赞统计及用户明细。',
     returnsSchema: {
       type: 'object',
       properties: {
@@ -1161,7 +1190,11 @@ export const actions = [
             total_count: { type: 'integer', description: '收藏总数' },
             last_time: { type: 'integer', description: '最近收藏时间戳' },
             today_count: { type: 'integer', description: '今日收藏数' },
-            userInfos: { type: 'array', description: '用户列表（恒空）' },
+            userInfos: {
+              type: 'array',
+              description: '收藏用户列表',
+              items: profileLikeUserSchema,
+            },
           },
         },
         voteInfo: {
@@ -1172,7 +1205,11 @@ export const actions = [
             new_count: { type: 'integer', description: '新增点赞数' },
             new_nearby_count: { type: 'integer', description: '附近的人新增点赞数' },
             last_visit_time: { type: 'integer', description: '最近访问时间戳' },
-            userInfos: { type: 'array', description: '用户列表（恒空）' },
+            userInfos: {
+              type: 'array',
+              description: '点赞用户列表',
+              items: profileLikeUserSchema,
+            },
           },
         },
       },
@@ -1215,6 +1252,40 @@ export const actions = [
         return okResponse(emojiIds);
       }
       return okResponse(urls);
+    },
+  }),
+
+  defineAction({
+    name: 'fetch_custom_face_detail',
+    summary: '获取自定义表情详情',
+    readOnly: true,
+    returns: '自定义表情详情数组，包含资源标识、图片地址、摘要与描述。',
+    returnsSchema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          emoji_id: { type: 'string', description: '可传给 SnowLuma 表情管理接口的资源标识' },
+          resId: { type: 'string', description: '兼容 NapCat 的资源标识' },
+          url: { type: 'string', description: '表情图片地址' },
+          md5: { type: 'string', description: '表情内容摘要' },
+          desc: { type: 'string', description: '自定义表情描述；未设置时为空字符串' },
+        },
+        required: ['emoji_id', 'resId', 'url', 'md5', 'desc'],
+      },
+    },
+    params: {
+      count: f.int({ min: 0 }).default(48),
+    },
+    run: async (p, ctx) => {
+      const details = await ctx.bridge.apis.profile.fetchCustomFaceDetails(p.count);
+      return okResponse(details.map((detail) => ({
+        emoji_id: detail.emojiId,
+        resId: detail.emojiId,
+        url: detail.url,
+        md5: detail.md5,
+        desc: detail.desc,
+      })));
     },
   }),
 
@@ -1852,10 +1923,14 @@ export const actions = [
     name: 'get_group_info_ex',
     summary: '获取群信息（扩展）',
     readOnly: true,
-    params: { group_id: f.groupId() },
+    returnsSchema: groupInfoReturnsSchema,
+    params: {
+      group_id: f.groupId(),
+      no_cache: f.bool().default(false),
+    },
     run: async (p, ctx) => {
       if (ctx.getGroupInfo) {
-        return okResponse(await ctx.getGroupInfo(p.group_id));
+        return okResponse(await ctx.getGroupInfo(p.group_id, p.no_cache));
       }
       return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     },
@@ -1865,10 +1940,14 @@ export const actions = [
     name: 'get_group_detail_info',
     summary: '获取群详细信息',
     readOnly: true,
-    params: { group_id: f.groupId() },
+    returnsSchema: groupInfoReturnsSchema,
+    params: {
+      group_id: f.groupId(),
+      no_cache: f.bool().default(false),
+    },
     run: async (p, ctx) => {
       if (ctx.getGroupInfo) {
-        return okResponse(await ctx.getGroupInfo(p.group_id));
+        return okResponse(await ctx.getGroupInfo(p.group_id, p.no_cache));
       }
       return failedResponse(RETCODE.ACTION_FAILED, 'not implemented');
     },
@@ -2433,6 +2512,52 @@ export const actions = [
   }),
 
   groupAction({
+    name: 'get_group_todo_list',
+    summary: '获取群待办列表',
+    returns: '群待办数组，包含可用于待办操作的消息标识、服务端摘要与时间',
+    readOnly: true,
+    run: async (p, ctx) => {
+      const todos = await ctx.bridge.apis.extras.getGroupTodoList(p.group_id);
+      const projections = todos.map((todo) => {
+        const messageId = hashMessageIdInt32(
+          todo.sequence,
+          p.group_id,
+          GROUP_MESSAGE_EVENT,
+        );
+        const meta: MessageMeta = {
+          isGroup: true,
+          targetId: p.group_id,
+          sequence: todo.sequence,
+          sequenceAuthoritative: true,
+          eventName: GROUP_MESSAGE_EVENT,
+          clientSequence: 0,
+          random: todo.random,
+          timestamp: todo.createdAt,
+        };
+        return { todo, messageId, meta };
+      });
+
+      ctx.cacheMessageMetas(projections.map(({ messageId, meta }) => ({
+        messageId,
+        meta,
+      })));
+
+      return okResponse(projections.map(({ todo, messageId }) => {
+        const cached = ctx.getMessage(messageId)?.message;
+        return {
+          message_id: messageId,
+          message_seq: todo.sequence,
+          message_random: todo.random,
+          message: Array.isArray(cached) ? cached : null,
+          text: todo.text,
+          create_time: todo.createdAt,
+          update_time: todo.updatedAt,
+        };
+      }));
+    },
+  }),
+
+  groupAction({
     name: 'set_group_todo',
     summary: '设置群待办',
     params: { message_id: f.messageId() },
@@ -2646,14 +2771,10 @@ export const actions = [
 ];
 
 // 已过滤（机器人/被忽略）的入群请求。
-// SnowLuma 已通过 fetchGroupRequests 实现底层 oidb 0x10c8_2 拉取。
+// 与标准群系统消息共用过滤收件箱，只保留方言动作的返回形状。
 // 这几个动作只是为实际使用中的 OneBot 方言客户端重命名并投影相同数据。
 async function fetchFilteredGroupRequests(ctx: ApiActionContext) {
-  try {
-    return await ctx.bridge.apis.contacts.fetchGroupRequests(true);
-  } catch {
-    return [];
-  }
+  return ctx.bridge.apis.contacts.fetchGroupRequests(true);
 }
 
 

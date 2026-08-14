@@ -1,6 +1,7 @@
 import { createLogger } from '@snowluma/common/logger';
 import type { MessageElement } from '@snowluma/protocol/events';
 import {
+  assertVideoSendPolicy,
   assertWindowShakeSendPolicy,
   assertValidMessageElement,
   ELEMENT_MANIFEST,
@@ -52,7 +53,7 @@ export function parseCQParams(raw: string): Record<string, string> {
 
 interface MessageSegment {
   type: string;
-  data?: Record<string, unknown>;
+  data?: unknown;
   [key: string]: unknown;
 }
 
@@ -68,9 +69,22 @@ function normalizeSegmentType(type: string): string {
   return type.toLowerCase();
 }
 
-function outboundInputSegmentTypes(message: JsonValue, autoEscape: boolean): string[] {
+interface OutboundInputSegmentSummary {
+  rawTypes: string[];
+  effectiveVideoTypes: string[];
+}
+
+function isExplicitEmptyTextPlaceholder(segment: MessageSegment): boolean {
+  return normalizeSegmentType(segment.type) === 'text'
+    && segmentPayload(segment).text === '';
+}
+
+function outboundInputSegmentSummary(
+  message: JsonValue,
+  autoEscape: boolean,
+): OutboundInputSegmentSummary {
   if (typeof message === 'string') {
-    if (autoEscape) return ['text'];
+    if (autoEscape) return { rawTypes: ['text'], effectiveVideoTypes: ['text'] };
     const types: string[] = [];
     let lastIndex = 0;
     for (const match of message.matchAll(CQ_REGEX)) {
@@ -79,34 +93,48 @@ function outboundInputSegmentTypes(message: JsonValue, autoEscape: boolean): str
       lastIndex = match.index! + match[0].length;
     }
     if (lastIndex < message.length) types.push('text');
-    return types;
+    return { rawTypes: types, effectiveVideoTypes: types };
   }
   if (Array.isArray(message)) {
-    return message.flatMap((item) => {
-      if (typeof item !== 'object' || item === null || Array.isArray(item)) return [];
+    const rawTypes: string[] = [];
+    const effectiveVideoTypes: string[] = [];
+    for (const item of message) {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
       const type = (item as { type?: unknown }).type;
-      return typeof type === 'string' ? [normalizeSegmentType(type)] : [];
-    });
+      if (typeof type !== 'string') continue;
+      const normalizedType = normalizeSegmentType(type);
+      rawTypes.push(normalizedType);
+      if (!isExplicitEmptyTextPlaceholder(item as MessageSegment)) {
+        effectiveVideoTypes.push(normalizedType);
+      }
+    }
+    return { rawTypes, effectiveVideoTypes };
   }
   if (typeof message === 'object' && message !== null) {
     const type = (message as { type?: unknown }).type;
-    return typeof type === 'string' ? [normalizeSegmentType(type)] : [];
+    const types = typeof type === 'string' ? [normalizeSegmentType(type)] : [];
+    return { rawTypes: types, effectiveVideoTypes: types };
   }
-  return [];
+  return { rawTypes: [], effectiveVideoTypes: [] };
 }
 
 /**
- * Reject unsupported window-shake inputs before parsers can resolve identities,
- * fetch cards, sign music, or perform any other externally visible work.
+ * Reject unsupported message combinations before parsers can resolve
+ * identities, fetch cards, sign music, or perform any other externally
+ * visible work.
  */
-export function assertWindowShakeMessageInput(
+export function assertOutboundMessageInput(
   message: JsonValue,
   autoEscape: boolean,
   scene: OutboundMessageScene,
 ): void {
-  const types = outboundInputSegmentTypes(message, autoEscape);
-  const shakeCount = types.filter((type) => type === 'poke' || type === 'shake').length;
-  assertWindowShakeSendPolicy(shakeCount, types.length, scene);
+  const { rawTypes, effectiveVideoTypes } = outboundInputSegmentSummary(message, autoEscape);
+  assertVideoSendPolicy(
+    effectiveVideoTypes.filter((type) => type === 'video').length,
+    effectiveVideoTypes.length,
+  );
+  const shakeCount = rawTypes.filter((type) => type === 'poke' || type === 'shake').length;
+  assertWindowShakeSendPolicy(shakeCount, rawTypes.length, scene);
 }
 
 function invalidMessageShape(message: string): MessageElementValidationError {
@@ -124,12 +152,18 @@ function validatedOutboundElement(element: MessageElement): MessageElement {
 
 function assertScalarSegmentData(type: string, data: Record<string, unknown>): void {
   for (const [field, value] of Object.entries(data)) {
+    const isJsonObjectField = type === 'json'
+      && (field === 'data' || field === 'config')
+      && typeof value === 'object'
+      && value !== null
+      && !Array.isArray(value);
     if (
       value === undefined
       || value === null
       || typeof value === 'string'
       || typeof value === 'number'
       || typeof value === 'boolean'
+      || isJsonObjectField
     ) continue;
     throw new MessageElementValidationError(
       'INVALID_FIELD',
@@ -179,11 +213,11 @@ function requireCoordinate(
 export async function segmentToElement(type: string, data: Record<string, unknown>, options?: ParseMessageOptions): Promise<MessageElement | null> {
   const normalizedType = normalizeSegmentType(type);
 
-  // Ordinary OneBot segment fields are scalar. Reject objects/arrays before
-  // codecs can stringify them into "[object Object]" and alter caller intent.
-  // Forward nodes deliberately own nested content but are rejected by their
-  // dedicated normal-send branch below; anonymous is rejected regardless of
-  // payload, so neither needs the scalar guard.
+  // Ordinary OneBot segment fields are scalar. JSON deliberately accepts its
+  // object-valued data/config compatibility fields; every other object/array
+  // is rejected before a codec can coerce it and alter caller intent. Forward
+  // nodes own nested content but are rejected by their dedicated normal-send
+  // branch below; anonymous is rejected regardless of payload.
   if (normalizedType !== 'node' && normalizedType !== 'anonymous') {
     assertScalarSegmentData(normalizedType, data);
   }
@@ -220,12 +254,19 @@ export async function segmentToElement(type: string, data: Record<string, unknow
       const musicType = requireNonEmptyStringField(normalizedType, data, 'type');
       // Non-custom platform names are deliberately open: musicSignUrl is
       // configurable and private signers may support platforms beyond the
-      // built-in NapCat set. Their executable contract is non-empty type+id.
-      if (musicType === 'custom') {
+      // built-in NapCat set. NapCat also treats an id-less platform-labelled
+      // segment as custom music data, so presence of id selects platform mode.
+      const hasMusicId = data.id !== undefined
+        && data.id !== null
+        && String(data.id).trim() !== '';
+      const hasCustomMusicData = ['url', 'audio', 'title', 'image', 'content']
+        .some((field) => Object.prototype.hasOwnProperty.call(data, field));
+      const usesCustomMusicData = musicType === 'custom' || (!hasMusicId && hasCustomMusicData);
+      if (usesCustomMusicData) {
         requireNonEmptyStringField(normalizedType, data, 'url');
         requireNonEmptyStringField(normalizedType, data, 'audio');
         requireNonEmptyStringField(normalizedType, data, 'title');
-      } else if (data.id === undefined || data.id === null || String(data.id).trim() === '') {
+      } else if (!hasMusicId) {
         throw new MessageElementValidationError(
           'MISSING_FIELD',
           'message segment "music" requires field "id" for a platform card',
@@ -236,9 +277,9 @@ export async function segmentToElement(type: string, data: Record<string, unknow
       const signUrl = options?.musicSignUrl || 'https://ss.xingzhige.com/music_card/card';
       try {
         let postData: Record<string, unknown>;
-        if (musicType === 'custom') {
+        if (usesCustomMusicData) {
           postData = {
-            type: 'custom',
+            type: musicType,
             id: undefined,
             url: String(data.url ?? ''),
             audio: String(data.audio ?? ''),
@@ -355,6 +396,11 @@ export async function segmentToElement(type: string, data: Record<string, unknow
   if (codec?.fromSegment) {
     const element = await codec.fromSegment(data, options);
     if (!element) {
+      // A reply decorates another sendable segment. NapCat-compatible clients
+      // treat an unusable reply target as best-effort and still deliver the
+      // remaining content; a reply-only message is rejected by parseMessage's
+      // final non-empty check below.
+      if (normalizedType === 'reply') return null;
       throw new MessageElementValidationError(
         'MISSING_FIELD',
         `message segment "${normalizedType}" is missing required or usable fields`,
@@ -380,6 +426,9 @@ function segmentPayload(seg: MessageSegment): Record<string, unknown> {
   const topLevel = { ...seg } as Record<string, unknown>;
   delete topLevel.type;
   delete topLevel.data;
+  if (normalizeSegmentType(seg.type) === 'json' && typeof seg.data === 'string') {
+    return { ...topLevel, data: seg.data };
+  }
   const nested = (seg.data && typeof seg.data === 'object' && !Array.isArray(seg.data))
     ? seg.data
     : {};
@@ -415,7 +464,7 @@ export async function parseMessage(message: JsonValue, autoEscape: boolean, opti
       // Some OneBot clients insert empty text between media as a separator.
       // Only the exact empty string is a no-op; malformed and whitespace text
       // must still pass through strict element validation.
-      if (normalizeSegmentType(seg.type) === 'text' && data.text === '') {
+      if (isExplicitEmptyTextPlaceholder(seg)) {
         log.debug('ignored explicit empty text placeholder in message segment array');
         continue;
       }

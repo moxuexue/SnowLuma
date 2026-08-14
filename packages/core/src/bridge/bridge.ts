@@ -52,6 +52,7 @@ export class Bridge implements BridgeInterface {
     this.apis = buildApiHub(this);
     this.identity.setFetcher({
       fetchProfile: (uin) => this.apis.contacts.fetchUserProfile(uin),
+      fetchProfileByUid: (uid) => this.apis.contacts.fetchUserProfileByUid(uid),
       fetchGroupMemberList: (gid) => this.apis.contacts.fetchGroupMemberList(gid),
     });
     this.pipeline = new IncomingPacketPipeline({
@@ -59,19 +60,10 @@ export class Bridge implements BridgeInterface {
       events: this.events,
       refreshMemberCache: (groupId, refreshGroupList, forceMemberList) =>
         this.refreshMemberCache(groupId, refreshGroupList, forceMemberList),
-      resolveStrangerProfile: async (uid) => {
-        try {
-          const p = await this.apis.contacts.fetchUserProfileByUid(uid);
-          if (p.uin <= 0) return null;
-          return { uin: p.uin, nickname: p.nickname };
-        } catch {
-          return null;
-        }
-      },
       resolveGroupJoinRequest: async (groupId, uid, subType) => {
         const [main, filtered] = await Promise.allSettled([
-          this.apis.contacts.fetchGroupRequests(false),
-          this.apis.contacts.fetchGroupRequests(true),
+          this.apis.contacts.fetchGroupRequestsByUid(false),
+          this.apis.contacts.fetchGroupRequestsByUid(true),
         ]);
         if (main.status === 'rejected') {
           log.warn('group-request enrichment main inbox failed: group=%d uid=%s err=%s',

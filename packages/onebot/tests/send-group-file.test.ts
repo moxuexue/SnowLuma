@@ -111,7 +111,7 @@ describe('send_group_msg with {type:"file"} segment', () => {
     }
   });
 
-  it('rejects replying to an OIDB-only group file id as a QQ sequence (#254)', async () => {
+  it('skips an OIDB-only group-file reply and sends the remaining content (#254)', async () => {
     const messageStore = new MessageStore(':memory:');
     try {
       const sendGroup = vi.fn(async (_groupId: number, _elements: any[]) => goodReceipt);
@@ -133,21 +133,21 @@ describe('send_group_msg with {type:"file"} segment', () => {
       await expect(sendGroupMessage(ctx, 12345, [
         { type: 'reply', data: { id: file.messageId } },
         { type: 'text', data: { text: 'received' } },
-      ] as any, false)).rejects.toMatchObject({
-        code: 'INVALID_FIELD',
-        elementType: 'reply',
-      });
-      expect(sendGroup).not.toHaveBeenCalled();
+      ] as any, false)).resolves.toMatchObject({ messageId: expect.any(Number) });
+      expect(sendGroup).toHaveBeenCalledWith(12345, [
+        { type: 'text', text: 'received' },
+      ]);
     } finally {
       messageStore.close();
     }
   });
 
-  it('rejects a local-only reply id even when its full event was not cached', async () => {
+  it('skips a local-only reply id even when its full event was not cached', async () => {
     const messageStore = new MessageStore(':memory:');
     try {
       const sendGroup = vi.fn(async (_groupId: number, _elements: any[]) => goodReceipt);
       const bridge = fakeBridge({
+        identity: { nickname: 'Bot' },
         apis: { message: { sendGroup } } as any,
         resolveUserUid: vi.fn(),
       } as any);
@@ -166,8 +166,10 @@ describe('send_group_msg with {type:"file"} segment', () => {
       await expect(sendGroupMessage(ctx, 12345, [
         { type: 'reply', data: { id: 77 } },
         { type: 'text', data: { text: 'received' } },
-      ] as any, false)).rejects.toMatchObject({ code: 'INVALID_FIELD', elementType: 'reply' });
-      expect(sendGroup).not.toHaveBeenCalled();
+      ] as any, false)).resolves.toMatchObject({ messageId: expect.any(Number) });
+      expect(sendGroup).toHaveBeenCalledWith(12345, [
+        { type: 'text', text: 'received' },
+      ]);
     } finally {
       messageStore.close();
     }
@@ -292,5 +294,27 @@ describe('send_group_msg with {type:"file"} segment', () => {
     expect(doUpload).toBe(true);
     // publish must NOT be called — upload() already handles it internally
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('percent-decodes a file:// URL basename when name is omitted (#354)', async () => {
+    const upload = vi.fn(async () => ({ fileId: 'auto-fid', fileHash: null }));
+    const bridge = fakeBridge({
+      apis: {
+        message: { sendGroup: vi.fn() },
+        groupFile: { upload, publish: vi.fn() },
+      } as any,
+      resolveUserUid: vi.fn(),
+    } as any);
+    const ctx = makeCtx(bridge);
+
+    await sendGroupMessage(ctx, 12345, [{
+      type: 'file',
+      data: { file: 'file:///D:/test/%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.xlsx' },
+    }] as any, false);
+
+    expect(upload).toHaveBeenCalledOnce();
+    const [, src, name] = upload.mock.calls[0]!;
+    expect(src).toBe('file:///D:/test/%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6.xlsx');
+    expect(name).toBe('测试文件.xlsx');
   });
 });

@@ -54,7 +54,7 @@ type CodecOutput<T extends MessageElementType> = T extends 'image'
 export interface ElementCodec<T extends MessageElementType = MessageElementType> {
   /** S 收·转：MessageElement → OneBot 段。 */
   toSegment?: (element: MessageElementOf<T>, ctx: ToSegmentContext) => Promise<JsonObject>;
-  /** P 发·解：OneBot 段 data → MessageElement（null = 无法构造，parser 会 typed reject）。 */
+  /** P 发·解：OneBot 段 data → MessageElement（null = 无法构造；reply 可作为可选修饰段被跳过）。 */
   fromSegment?: (data: Record<string, unknown>, options?: ParseMessageOptions) => Promise<CodecOutput<T> | null>;
 }
 
@@ -203,8 +203,18 @@ export const ELEMENT_CODECS = {
       return { type: 'reply', data: { id: String(id) } };
     },
     async fromSegment(data, options) {
-      const id = intOr(data.id, 0);
-      if (id === 0) return null;
+      let id: number;
+      try {
+        id = intOr(data.id, 0);
+      } catch (error) {
+        if (!(error instanceof MessageElementValidationError)) throw error;
+        log.warn('could not quote the target message');
+        return null;
+      }
+      if (id <= 0) {
+        log.warn('could not quote the target message');
+        return null;
+      }
       const meta = options?.resolveReplyMeta?.(id) ?? null;
 
       if (options?.resolveReplySequence) {
@@ -231,11 +241,8 @@ export const ELEMENT_CODECS = {
       // message and therefore has no QQ server sequence. Treating the opaque
       // OneBot id as a direct sequence would publish a malformed reply.
       if (meta?.sequenceAuthoritative === false) {
-        throw new MessageElementValidationError(
-          'INVALID_FIELD',
-          `reply target ${id} has no authoritative QQ sequence`,
-          'reply',
-        );
+        log.warn('could not quote the target message');
+        return null;
       }
 
       // Backward-compatible path: allow direct seq reply IDs.
@@ -318,11 +325,14 @@ export const ELEMENT_CODECS = {
       return { type: 'json', data: { data: element.text ?? '' } };
     },
     async fromSegment(data) {
-      const text = data.data;
+      const raw = data.data;
+      const text = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+        ? JSON.stringify(raw)
+        : raw;
       if (typeof text !== 'string' || !text.trim()) {
         throw new MessageElementValidationError(
           'INVALID_FIELD',
-          'message segment "json" field "data" must be a non-empty JSON string',
+          'message segment "json" field "data" must be a JSON object or non-empty JSON string',
           'json',
           'data',
         );
@@ -489,11 +499,46 @@ export const ELEMENT_CODECS = {
   },
 
   markdown: {
-    // 收侧（S）无对应，仅发·解存在。
+    async toSegment(element) {
+      return {
+        type: 'markdown',
+        data: { content: element.text },
+      };
+    },
     async fromSegment(data) {
       return {
         type: 'markdown',
         text: String(data.content ?? ''),
+      };
+    },
+  },
+
+  inline_keyboard: {
+    async toSegment(element) {
+      return {
+        type: 'inline_keyboard',
+        data: {
+          bot_appid: element.botAppid,
+          rows: element.rows.map((row) => ({
+            buttons: row.buttons.map((button) => ({
+              id: button.id,
+              label: button.label,
+              visited_label: button.visitedLabel,
+              style: button.style,
+              type: button.type,
+              click_limit: button.clickLimit,
+              unsupport_tips: button.unsupportedTips,
+              data: button.data,
+              at_bot_show_channel_list: button.atBotShowChannelList,
+              permission_type: button.permissionType,
+              specify_role_ids: button.specifyRoleIds,
+              specify_user_ids: button.specifyUserIds,
+              is_reply: button.isReply,
+              enter: button.enter,
+              anchor: button.anchor,
+            })),
+          })),
+        },
       };
     },
   },

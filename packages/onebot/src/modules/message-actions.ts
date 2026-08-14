@@ -2,6 +2,7 @@ import { createLogger } from '@snowluma/common/logger';
 import type { BridgeInterface } from '@snowluma/core/bridge-interface';
 import type { ForwardNodePayload, FriendMessage, GroupMessage, MessageElement, MessageElementOf, QQEventVariant } from '@snowluma/protocol/events';
 import { getVideoSourceSize, MAX_VIDEO_SIZE } from '@snowluma/protocol/highway/video-upload';
+import { guessFileNameFromUrl } from '@snowluma/protocol/highway/utils';
 import type { MessageSendResult } from '../api-handler';
 import { convertEvent, elementsToOneBotSegments, type ConverterContext } from '../event-converter';
 import { segmentsToRawMessage } from '../helper/cq';
@@ -13,7 +14,7 @@ import {
   privateMessageEventName,
 } from '../message-id';
 import {
-  assertWindowShakeMessageInput,
+  assertOutboundMessageInput,
   MessageElementValidationError,
   parseMessage,
 } from '../message-parser';
@@ -797,7 +798,7 @@ export async function sendPrivateMessage(
   if (tempGroupId !== undefined && !isTempReply) {
     throw new Error(`cannot send to user ${userId} in group ${tempGroupId}: no such temp session`);
   }
-  assertWindowShakeMessageInput(
+  assertOutboundMessageInput(
     message,
     autoEscape,
     tempGroupId === undefined ? 'direct-private' : 'group-temp',
@@ -978,7 +979,7 @@ export async function sendPrivateMessage(
     const userUid = await ensureFileTargetUid();
     for (const fileEl of allFileElements) {
       if (fileEl.url && !fileEl.fileId) {
-        const name = fileEl.fileName || fileEl.url.split('/').pop() || 'file';
+        const name = fileEl.fileName || guessFileNameFromUrl(fileEl.url) || 'file';
         // Upload and publish are separate here so the Action keeps the real
         // PbSendMsg receipt. Letting uploadPrivate publish internally discards
         // that receipt, which makes a reliable message_sent event impossible
@@ -1034,7 +1035,7 @@ export async function sendGroupMessage(
   message: JsonValue,
   autoEscape: boolean,
 ): Promise<MessageSendResult> {
-  assertWindowShakeMessageInput(message, autoEscape, 'group');
+  assertOutboundMessageInput(message, autoEscape, 'group');
   const elements = await parseMessage(message, autoEscape, {
     resolveReplySequence: (replyMessageId) => {
       return ref.messageStore.resolveReplySequence(true, groupId, replyMessageId);
@@ -1109,7 +1110,7 @@ export async function sendGroupMessage(
     let fileId: string;
     if (fileEl.url && !fileEl.fileId) {
       // upload() already calls publish() internally — do NOT call publish() again.
-      const name = fileEl.fileName || fileEl.url.split('/').pop() || 'file';
+      const name = fileEl.fileName || guessFileNameFromUrl(fileEl.url) || 'file';
       const result = await ref.bridge.apis.groupFile.upload(groupId, fileEl.url, name, '/', true);
       fileId = result.fileId ?? '';
       if (!fileId) throw new Error('group file auto-upload returned no file_id');
@@ -1232,6 +1233,7 @@ export async function forwardSingleMessage(
   if (!event) throw new Error(`message not found: ${messageId}`);
 
   const content = (event.message ?? event.raw_message ?? '') as JsonValue;
+  assertOutboundMessageInput(content, false, 'forward');
   const parsed = await parseMessage(content, false);
   if (parsed.length === 0) throw new Error('message has no content');
 
@@ -1528,7 +1530,7 @@ function assertForwardNodeMetadataIsScalar(
   }
 }
 
-function assertNoWindowShakeInForwardInput(
+function assertForwardMessageInputPolicies(
   ref: OneBotInstanceContext,
   messages: JsonValue,
   depth = 0,
@@ -1544,7 +1546,7 @@ function assertNoWindowShakeInForwardInput(
     if (messageId !== 0) {
       const event = ref.messageStore.findEvent(messageId);
       if (event) {
-        assertWindowShakeMessageInput(
+        assertOutboundMessageInput(
           (event.message ?? event.raw_message ?? '') as JsonValue,
           false,
           'forward',
@@ -1555,9 +1557,9 @@ function assertNoWindowShakeInForwardInput(
 
     const content = (nodeData.content ?? nodeData.message ?? '') as JsonValue;
     if (isNestedNodeArray(content)) {
-      assertNoWindowShakeInForwardInput(ref, content, depth + 1);
+      assertForwardMessageInputPolicies(ref, content, depth + 1);
     } else {
-      assertWindowShakeMessageInput(content, false, 'forward');
+      assertOutboundMessageInput(content, false, 'forward');
     }
   }
 }
@@ -1655,9 +1657,10 @@ async function parseForwardNodes(
   });
 
   // Scan the complete raw tree before parsing any earlier node. Some segment
-  // codecs perform identity lookups or HTTP signing, so discovering a later
-  // window-shake segment during the normal loop would already be too late.
-  assertNoWindowShakeInForwardInput(ref, messages, depth);
+  // codecs perform identity lookups or HTTP signing, so discovering an
+  // unsupported message combination during the normal loop would already be
+  // too late.
+  assertForwardMessageInputPolicies(ref, messages, depth);
 
   const nodes: ForwardNodePayload[] = [];
   for (const { nodeData } of prepared) {
@@ -1789,6 +1792,7 @@ function elementPreview(element: MessageElement): string {
     case 'json': return '[JSON消息]';
     case 'xml': return '[XML消息]';
     case 'markdown': return '[Markdown]';
+    case 'inline_keyboard': return '[交互按钮]';
     case 'forward': return '[聊天记录]';
     case 'poke': return '[窗口抖动]';
     default: return '';

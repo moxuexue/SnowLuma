@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { protobuf_decode, protobuf_encode } from '@snowluma/proton';
 import type { OidbBase } from '@snowluma/proto-defs/oidb';
 import type {
+  CustomFaceModifyResp,
+  CustomFaceMoveBody,
+  FaceroamOpResp,
   GroupAvatarExtra,
   Oidb0x7edResp,
   Oidb0xe17Resp,
@@ -170,22 +173,35 @@ describe('apis/profile', () => {
 
   it('getProfileLike (self): resolves self UID, returns formatted favorite + vote info', async () => {
     const bridge = mockBridge();
+    bridge.identity.findUinByUid.mockImplementation(
+      (uid: string) => uid === 'liker-uid' ? 20002 : 0,
+    );
     bridge.sendRawPacket.mockResolvedValueOnce({
       success: true, gotResponse: true, errorCode: 0, errorMessage: '',
       responseData: Buffer.from(protobuf_encode<OidbBase<Oidb0x7edResp>>({
         body: {
           userLikeInfos: [{
             uid: 'u',
-            time: 1700000000n,
-            favoriteInfo: { totalCount: 5, lastTime: 1n, newCount: 1 },
-            voteInfo: { totalCount: 7, newCount: 2, lastTime: 2n },
+            time: 1700000000,
+            favoriteInfo: { totalCount: 5, lastTime: 1, todayCount: 1 },
+            voteInfo: {
+              totalCount: 7,
+              newCount: 2,
+              newNearbyCount: 1,
+              lastVisitTime: 2,
+              userInfos: [{ uid: 'liker-uid', nick: '点赞者', count: 3 }],
+            },
           }],
         } as any,
       })),
     });
     const out = await new ProfileApi(bridge as any).getLike();
+    expect(bridge.sendRawPacket.mock.calls[0]![0]).toBe('OidbSvcTrpcTcp.0x7ed_13');
     expect(out.favoriteInfo.total_count).toBe(5);
     expect(out.voteInfo.total_count).toBe(7);
+    expect(out.voteInfo.userInfos).toEqual([
+      expect.objectContaining({ uid: 'liker-uid', uin: 20002, nick: '点赞者', count: 3 }),
+    ]);
   });
 
   it('getProfileLike throws on empty result', async () => {
@@ -195,6 +211,56 @@ describe('apis/profile', () => {
       responseData: Buffer.from(protobuf_encode<OidbBase<Oidb0x7edResp>>({ body: { userLikeInfos: [] } as any })),
     });
     await expect(new ProfileApi(bridge as any).getLike()).rejects.toThrow(/empty/);
+  });
+
+  it('getProfileLike resolves uncached liker uins from their profiles', async () => {
+    const bridge = mockBridge();
+    bridge.identity.findUinByUid.mockReturnValue(null);
+    const fetchUserProfileByUid = vi.fn(async (uid: string) => ({
+      uid,
+      uin: 30003,
+      nickname: '陌生点赞者',
+    }));
+    (bridge.apis.contacts as any).fetchUserProfileByUid = fetchUserProfileByUid;
+    bridge.sendRawPacket.mockResolvedValueOnce({
+      success: true, gotResponse: true, errorCode: 0, errorMessage: '',
+      responseData: Buffer.from(protobuf_encode<OidbBase<Oidb0x7edResp>>({
+        body: {
+          userLikeInfos: [{
+            uid: 'self-uid',
+            voteInfo: { userInfos: [{ uid: 'stranger-uid', nick: '陌生点赞者' }] },
+          }],
+        },
+      })),
+    });
+
+    const out = await new ProfileApi(bridge as any).getLike();
+
+    expect(fetchUserProfileByUid).toHaveBeenCalledOnce();
+    expect(fetchUserProfileByUid).toHaveBeenCalledWith('stranger-uid');
+    expect(out.voteInfo.userInfos[0]?.uin).toBe(30003);
+  });
+
+  it('getProfileLike surfaces failures while resolving uncached liker uins', async () => {
+    const bridge = mockBridge();
+    bridge.identity.findUinByUid.mockReturnValue(null);
+    (bridge.apis.contacts as any).fetchUserProfileByUid = vi.fn(async () => {
+      throw new Error('profile lookup failed');
+    });
+    bridge.sendRawPacket.mockResolvedValueOnce({
+      success: true, gotResponse: true, errorCode: 0, errorMessage: '',
+      responseData: Buffer.from(protobuf_encode<OidbBase<Oidb0x7edResp>>({
+        body: {
+          userLikeInfos: [{
+            uid: 'self-uid',
+            voteInfo: { userInfos: [{ uid: 'stranger-uid' }] },
+          }],
+        },
+      })),
+    });
+
+    await expect(new ProfileApi(bridge as any).getLike())
+      .rejects.toThrow('profile lookup failed');
   });
 
   it('getUnidirectionalFriendList parses the embedded JSON body', async () => {
@@ -207,5 +273,68 @@ describe('apis/profile', () => {
     });
     const out = await new ProfileApi(bridge as any).getUnidirectionalFriendList();
     expect(out).toEqual([{ uin: 10001 }, { uin: 10002 }]);
+  });
+
+  it('fetchCustomFaceDetails supplements the Faceroam ids with server descriptions (#333)', async () => {
+    const bridge = mockBridge();
+    const emojiA = '10001_0_0_0_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA_0_0';
+    const emojiB = '10001_0_0_0_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB_0_0';
+    bridge.sendRawPacket
+      .mockResolvedValueOnce({
+        success: true,
+        gotResponse: true,
+        errorCode: 0,
+        errorMessage: '',
+        responseData: Buffer.from(protobuf_encode<FaceroamOpResp>({
+          retCode: 0,
+          item: { faceIds: [emojiA, emojiB] },
+        })),
+      } as any)
+      .mockResolvedValueOnce({
+        success: true,
+        gotResponse: true,
+        errorCode: 0,
+        errorMessage: '',
+        responseData: Buffer.from(protobuf_encode<OidbBase<CustomFaceModifyResp>>({
+          body: {
+            retCode: 0,
+            entries: [{ emoji: { emojiId: emojiB }, desc: '第二个表情' }],
+          },
+        })),
+      } as any);
+
+    const out = await new ProfileApi(bridge as any).fetchCustomFaceDetails(2);
+
+    expect(bridge.sendRawPacket.mock.calls.map((call) => call[0])).toEqual([
+      'Faceroam.OpReq',
+      'OidbSvcTrpcTcp.0x902e_1',
+    ]);
+    const detailRequest = protobuf_decode<OidbBase<CustomFaceMoveBody>>(
+      bridge.sendRawPacket.mock.calls[1]![1],
+    );
+    expect(detailRequest.body?.emojis).toEqual([
+      { emojiId: emojiA, md5: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+      { emojiId: emojiB, md5: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' },
+    ]);
+    expect(out).toEqual([
+      {
+        emojiId: emojiA,
+        url: `https://p.qpic.cn/qq_expression/10001/${emojiA}/0`,
+        md5: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        desc: '',
+      },
+      {
+        emojiId: emojiB,
+        url: `https://p.qpic.cn/qq_expression/10001/${emojiB}/0`,
+        md5: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        desc: '第二个表情',
+      },
+    ]);
+  });
+
+  it('fetchCustomFaceDetails returns immediately for count=0', async () => {
+    const bridge = mockBridge();
+    await expect(new ProfileApi(bridge as any).fetchCustomFaceDetails(0)).resolves.toEqual([]);
+    expect(bridge.sendRawPacket).not.toHaveBeenCalled();
   });
 });

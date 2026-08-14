@@ -82,6 +82,10 @@ export interface OidbSvcTrpcTcp0xFE5_2GroupInfo {
   description?:  pb<18, string>;
   question?:     pb<19, string>;
   announcement?: pb<30, string>;
+  // wrapper.node 3.2.32 group_codec.cc DecodeGroupInfo: tag 10 → internal
+  // 60027 (JS groupShutupExpireTime). Tag 31 is 60259, not the mute expire.
+  // 0 = off, 0xFFFFFFFF = permanent, otherwise unix-seconds expire.
+  shutUpAllTimestamp?: pb<10, uint_32>;
 }
 
 export interface OidbSvcTrpcTcp0xFE5_2CustomInfo {
@@ -115,6 +119,14 @@ export interface OidbSvcTrpcTcp0x88D_0Results {
   question?:        pb<24, string>;
   answer?:          pb<25, string>;
   maxAdminCount?:   pb<29, uint_64>;
+  // wrapper.node 3.2.32 group_info_fetch_codec.cc
+  // DecodeSingleGroupDetailInfoByBaseFilter: tag 45 → internal 60027.
+  // Tag 59 is 60259, not the mute expire. Request mask tag is also 45.
+  shutUpAllTimestamp?: pb<45, uint_32>;
+  /** Complete app privilege bitfield (requested with detail flag tag 99). */
+  privilegeFlag?:   pb<99, uint_32>;
+  /** Complete groupFlagExt4 bitfield (requested with detail flag tag 101). */
+  groupFlagExt4?:   pb<101, uint_32>;
 }
 export interface OidbSvcTrpcTcp0x88D_0ResponseGroupInfo {
   uin?:     pb<1, uint_64>;
@@ -178,7 +190,7 @@ export interface OidbRobotUinRangeResponse {
   robotConfig?: pb<5, OidbRobotUinRangeConfig>;
 }
 
-// OIDB.0x10C0 Group Request
+// OIDB.0x10C0 Group Request — UID-form response (envelope reserved=0).
 export interface OidbSvcTrpcTcp0x10C0ResponseUser {
   uid?:  pb<1, string>;
   name?: pb<2, string>;
@@ -203,6 +215,36 @@ export interface OidbSvcTrpcTcp0x10C0ResponseRequest {
 
 export interface OidbSvcTrpcTcp0x10C0Response {
   requests?:     pb_repeated<1, OidbSvcTrpcTcp0x10C0ResponseRequest>;
+  field2?:       pb<2, uint_64>;
+  newLatestSeq?: pb<3, uint_64>;
+  field4?:       pb<4, uint_32>;
+  field5?:       pb<5, uint_64>;
+  field6?:       pb<6, uint_32>;
+}
+
+// The native UIN-form request (envelope reserved=1) uses the same response
+// tags, but user field 1 changes wire type from string to uint32. Keep a
+// separate schema: decoding both forms through one interface would silently
+// discard every numeric account identifier as a mismatched wire type.
+export interface OidbSvcTrpcTcp0x10C0ResponseUserByUin {
+  uin?:  pb<1, uint_32>;
+  name?: pb<2, string>;
+}
+
+export interface OidbSvcTrpcTcp0x10C0ResponseRequestByUin {
+  sequence?:     pb<1, uint_64>;
+  eventType?:    pb<2, uint_32>;
+  state?:        pb<3, uint_32>;
+  group?:        pb<4, OidbSvcTrpcTcp0x10C0ResponseGroup>;
+  target?:       pb<5, OidbSvcTrpcTcp0x10C0ResponseUserByUin>;
+  invitor?:      pb<6, OidbSvcTrpcTcp0x10C0ResponseUserByUin>;
+  operatorUser?: pb<7, OidbSvcTrpcTcp0x10C0ResponseUserByUin>;
+  field9?:       pb<9, string>;
+  comment?:      pb<10, string>;
+}
+
+export interface OidbSvcTrpcTcp0x10C0ResponseByUin {
+  requests?:     pb_repeated<1, OidbSvcTrpcTcp0x10C0ResponseRequestByUin>;
   field2?:       pb<2, uint_64>;
   newLatestSeq?: pb<3, uint_64>;
   field4?:       pb<4, uint_32>;
