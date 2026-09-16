@@ -86,6 +86,33 @@ function essenceString(value: unknown, field: string, allowEmpty: boolean): stri
   return value;
 }
 
+function optionalEssenceText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** Unknown digest types (share cards, future msg_type values) degrade to
+ *  text so one unmapped item cannot fail the whole essence list. */
+function degradeEssenceContent(content: GroupEssenceContent): JsonObject {
+  const brief = optionalEssenceText(content.share_brief);
+  const title = optionalEssenceText(content.share_title);
+  const summary = optionalEssenceText(content.share_summary);
+  const url = optionalEssenceText(content.share_url);
+  const text = optionalEssenceText(content.text);
+  const heading = brief ?? title ?? summary ?? text;
+  const parts: string[] = [];
+  if (heading) parts.push(heading);
+  if (title && title !== heading) parts.push(title);
+  if (summary && summary !== heading && summary !== title) parts.push(summary);
+  if (text && text !== heading) parts.push(text);
+  if (url) parts.push(url);
+  return {
+    type: 'text',
+    data: { text: parts.length > 0 ? parts.join('\n') : `[essence type ${content.msg_type}]` },
+  };
+}
+
 function essenceContentToSegment(content: GroupEssenceContent): JsonObject {
   switch (content.msg_type) {
     case 1:
@@ -136,7 +163,7 @@ function essenceContentToSegment(content: GroupEssenceContent): JsonObject {
       };
     }
     default:
-      throw new Error(`unsupported group essence content type: ${content.msg_type}`);
+      return degradeEssenceContent(content);
   }
 }
 
@@ -726,7 +753,7 @@ export const actions = [
   groupAction({
     name: '_get_group_notice',
     summary: '获取群公告',
-    returns: '普通公告与新成员公告的合并数组；send_to_new_members 标识后者',
+    returns: '普通公告与新成员公告的合并数组；send_to_new_members 标识后者；图片含 id、url、宽高',
     readOnly: true,
     run: async (p, ctx) => {
       const notices = await ctx.bridge.apis.web.getNotice(p.group_id);
@@ -1876,7 +1903,8 @@ export const actions = [
     },
   }),
   // set_doubt_friends_add_request — handle a 可疑好友申请 (0xd69_0). `flag` is
-  // the uid from the get list. approve → approvalDoubtBuddyReq; approve:false
+  // the uid from the get list, or the applicant's account number (resolved
+  // before the packet is built). approve → approvalDoubtBuddyReq; approve:false
   // → delDoubtBuddyReq (reject/decline). NapCat only ever approves; we add the
   // reject path since we RE'd delDoubtBuddyReq too.
   defineAction({

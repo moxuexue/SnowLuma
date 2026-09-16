@@ -147,43 +147,21 @@ export interface CommentContentItem {
 export interface CommentUser {
   uin?: pb<13, string>;
 }
-export interface CommentReqContentMeta {
-  field1?: pb<1, uint_32>;
-  field2?: pb<2, string>;
-  field3?: pb<3, string>;
-  field4?: pb<4, string>;
-  field5?: pb<5, uint_32>;
-  field6?: pb<6, string>;
-}
 export interface CommentReqContent {
-  field2?:    pb<2, CommentUser>;
-  field3?:    pb<3, CommentReqContentMeta>;
+  user?:      pb<2, CommentUser>;
+  // QQ NT FeedWorker writes StComment content cells as a repeated field.
+  contents?:  pb_repeated<3, CommentContentItem>;
   clientKey?: pb<7, string>;
 }
-export interface CommentReqPhotoMeta {
-  field1?:  pb<1, uint_32>;
-  field2?:  pb<2, string>;
-  lloc?:    pb<3, string>;
-  field4?:  pb<4, string>;
-  field6?:  pb<6, string>;
-  field7?:  pb<7, uint_32>;
-  field8?:  pb<8, uint_32>;
-  field9?:  pb<9, uint_32>;
-  field14?: pb<14, uint_32>;
-  field15?: pb<15, uint_32>;
-  field17?: pb<17, uint_32>;
-}
-export interface CommentReqPhotoWrap {
-  field2?: pb<2, CommentReqPhotoMeta>;
-}
+// QQ NT FeedWorker copies StFeed media cells with the MediaInfo codec.
 export interface CommentReqPhotoInfo {
-  field1?:  pb<1, CommentReqPhotoWrap>;
+  medias?:  pb_repeated<1, MediaInfo>;
   albumId?: pb<3, string>;
-  field5?:  pb<5, uint_32>;
+  batchId?: pb<5, uint_64>;
 }
 export interface CommentReqBodyHeader {
-  field3?: pb<3, uint_32>;
-  field4?: pb<4, string>;
+  time?:   pb<3, uint_64>;
+  feedId?: pb<4, string>;
 }
 export interface CommentReqBodyUserWrap {
   field1?: pb<1, CommentUser>;
@@ -222,11 +200,17 @@ export interface CommentRespData {
   clientKey?: pb<7, string>;
 }
 export interface DoQunCommentResponseComment {
-  data?: pb<2, CommentRespData>;
+  id?:        pb<1, string>;
+  data?:      pb<2, CommentRespData>;
+  content?:   pb_repeated<3, CommentRespContent>;
+  time?:      pb<4, uint_64>;
+  clientKey?: pb<7, string>;
 }
 export interface DoQunCommentResponse {
-  field1?:  pb<1, int_32>;
-  comment?: pb<4, DoQunCommentResponseComment>;
+  field1?:    pb<1, int_32>;
+  result?:    pb<2, int_32>;
+  errorText?: pb<3, string>;
+  comment?:   pb<4, DoQunCommentResponseComment>;
 }
 export interface DoQunLikeReqLikeInfo {
   id?:     pb<1, string>;
@@ -274,6 +258,46 @@ export interface DoQunLikeRespBody {
 export interface DoQunLikeResponse {
   field1?: pb<1, int_32>;
   body?:   pb<4, DoQunLikeRespBody>;
+}
+// QunAlbum.trpc.qzone.webapp_qun_feeds.FeedsReader.GetQunFeedDetail
+//
+// Official album comments look this feed up first (empty feed id + album /
+// batch / lloc) and then copy the returned cell into DoQunComment.
+export interface GetQunFeedDetailReqData {
+  groupId?:      pb<2, string>;
+  feedId?:       pb<3, string>;
+  commentCount?: pb<4, int_32>;
+  attachInfo?:   pb<5, string>;
+  albumId?:      pb<6, string>;
+  batchId?:      pb<7, string>;
+  lloc?:         pb<8, string>;
+}
+export interface GetQunFeedDetailRequest {
+  seq?:     pb<1, int_32>;
+  field2?:  pb_optional<2, bytes>;
+  field3?:  pb_optional<3, bytes>;
+  data?:    pb<4, GetQunFeedDetailReqData>;
+  traceId?: pb<5, string>;
+  extMap?:  pb_repeated<10, ExtMapEntry>;
+}
+export interface QunFeedCellCommon {
+  time?:   pb<3, uint_64>;
+  feedId?: pb<4, string>;
+}
+export interface QunFeed {
+  cellCommon?: pb<1, QunFeedCellCommon>;
+}
+export interface QunClientFeed {
+  feed?: pb<1, QunFeed>;
+}
+export interface GetQunFeedDetailRspData {
+  feed?: pb<2, QunClientFeed>;
+}
+export interface GetQunFeedDetailResponse {
+  seq?:       pb<1, int_32>;
+  result?:    pb<2, int_32>;
+  errorText?: pb<3, string>;
+  data?:      pb<4, GetQunFeedDetailRspData>;
 }
 export interface DeleteMediasReqBody {
   groupId?: pb<1, string>;
