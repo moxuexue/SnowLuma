@@ -2,6 +2,8 @@ import type { JsonObject, JsonValue } from '@snowluma/common/json';
 import { createLogger } from '@snowluma/common/logger';
 import type {
   AlbumCreator,
+  CommentReqBodyHeader,
+  CommentReqPhotoInfo,
   CommentRespData,
   DeleteMediasRequest,
   DeleteMediasResponse,
@@ -14,6 +16,7 @@ import type {
   GetQunFeedDetailRequest,
   GetQunFeedDetailResponse,
   GroupAlbumInfo as GroupAlbumInfoWire,
+  QunFeedCellCommon,
   GetMediaListRequest,
   GetMediaListResponse,
   MediaInfo,
@@ -326,7 +329,13 @@ export class GroupAlbumApi {
     }
     const mediaLloc = commentMediaLloc(resolved, lloc);
     const feed = await this.getQunFeedDetail(groupId, albumId, batchId, mediaLloc);
-    const media = mediaInfoForComment(resolved, mediaLloc);
+    const ownerUin = feed.ownerUin || resolved?.uploader || '';
+    const photoInfo = commentPhotoInfo(
+      feed.media,
+      mediaInfoForComment(resolved, mediaLloc),
+      albumId,
+      batchId,
+    );
 
     const body = protobuf_encode<DoQunCommentRequest>({
       field1: DO_QUN_COMMENT_SEQ,
@@ -336,18 +345,9 @@ export class GroupAlbumApi {
         groupId: groupId.toString(),
         field3: 2,
         reqBody: {
-          field1: {
-            time: feed.time,
-            feedId: feed.feedId,
-          },
-          field2: {
-            field1: { uin },
-          },
-          field5: {
-            medias: [media],
-            albumId,
-            batchId,
-          },
+          field1: commentReqHeader(feed.cellCommon),
+          ...(ownerUin ? { field2: { field1: { uin: ownerUin } } } : {}),
+          field5: photoInfo,
         },
         field5: {
           user: { uin },
@@ -398,12 +398,7 @@ export class GroupAlbumApi {
     const type = isLike ? 2 : 1;
     const status = isLike ? 0 : 1;
 
-    let id = '';
-    if (lloc) {
-      id = `421_1_0_${groupId}|${albumId}|${batchId}^||^421_1_0_${groupId}|${albumId}|${lloc}^||^0`;
-    } else {
-      id = `421_1_0_${groupId}|${albumId}|${batchId}`;
-    }
+    const id = qunFeedCellId(groupId, albumId, batchId, lloc);
 
     const body = protobuf_encode<DoQunLikeRequest>({
       field1: 5495,
@@ -557,7 +552,7 @@ export class GroupAlbumApi {
     albumId: string,
     batchId: bigint,
     lloc: string,
-  ): Promise<{ time: bigint; feedId: string }> {
+  ): Promise<{ cellCommon: QunFeedCellCommon; ownerUin: string; media?: CommentReqPhotoInfo }> {
     const traceId = `_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
     const body = protobuf_encode<GetQunFeedDetailRequest>({
       seq: 0,
@@ -590,14 +585,16 @@ export class GroupAlbumApi {
       );
     }
 
-    const cell = resp.data?.feed?.feed?.cellCommon;
+    const feed = resp.data?.feed?.feed;
+    const cell = feed?.cellCommon;
     const feedId = cell?.feedId ?? '';
     if (!feedId) {
       throw new Error('comment album media error: empty feed');
     }
     return {
-      time: cell?.time ?? 0n,
-      feedId,
+      cellCommon: cell ?? { feedId },
+      ownerUin: feed?.cellUserInfo?.user?.uin ?? '',
+      media: feed?.cellMedia,
     };
   }
 }
@@ -667,16 +664,57 @@ function commentMediaLloc(item: AlbumCommentMediaItem | undefined, lloc: string)
 }
 
 function mediaInfoForComment(item: AlbumCommentMediaItem | undefined, lloc: string): MediaInfo {
+  const batchId = optionalBatchId(item?.batchId);
+  const shared: MediaInfo = {
+    ...(item?.uploader ? { uploader: item.uploader } : {}),
+    ...(batchId !== undefined ? { batchId } : {}),
+  };
   if (item?.video) {
     return {
+      ...shared,
       type: 1,
       video: { cover: { lloc: item.video.cover?.lloc || lloc } },
     };
   }
   return {
+    ...shared,
     type: 0,
     image: { lloc: item?.image?.lloc || lloc },
   };
+}
+
+function qunFeedCellId(
+  groupId: number,
+  albumId: string,
+  batchId: string | number | bigint,
+  lloc?: string,
+): string {
+  const head = `421_1_0_${groupId}|${albumId}|${batchId}`;
+  if (!lloc) return head;
+  return `${head}^||^421_1_0_${groupId}|${albumId}|${lloc}^||^0`;
+}
+
+function commentReqHeader(cell: QunFeedCellCommon): CommentReqBodyHeader {
+  return {
+    ...(cell.time !== undefined ? { time: cell.time } : {}),
+    ...(cell.feedId ? { feedId: cell.feedId } : {}),
+  };
+}
+
+function commentPhotoInfo(
+  feedMedia: CommentReqPhotoInfo | undefined,
+  fallback: MediaInfo,
+  albumId: string,
+  batchId: bigint,
+): CommentReqPhotoInfo {
+  if (feedMedia?.medias?.length) {
+    return {
+      medias: feedMedia.medias,
+      albumId: feedMedia.albumId || albumId,
+      batchId: feedMedia.batchId ?? batchId,
+    };
+  }
+  return { medias: [fallback], albumId, batchId };
 }
 
 function findCommentMedia(

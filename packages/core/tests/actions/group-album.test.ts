@@ -8,6 +8,7 @@ import type {
   GetMediaListResponse,
   GetQunFeedDetailRequest,
   GetQunFeedDetailResponse,
+  QunFeedCellCommon,
 } from '@snowluma/proto-defs/oidb-actions/group-album';
 import { protobuf_decode, protobuf_encode } from '@snowluma/proton';
 import { GroupAlbumApi } from '../../src/bridge/apis/group-album';
@@ -584,6 +585,15 @@ describe('apis/group-album', () => {
   function packFeedDetail(
     feedId = 'official-feed-id',
     time = 1700000123n,
+    extra: {
+      ownerUin?: string;
+      cellCommon?: Omit<QunFeedCellCommon, 'time' | 'feedId'>;
+      cellMedia?: {
+        medias?: Array<{ type?: number; image?: { lloc?: string }; video?: { cover?: { lloc?: string } } }>;
+        albumId?: string;
+        batchId?: bigint;
+      };
+    } = {},
   ): ReturnType<typeof packDeleteOk> {
     return {
       success: true,
@@ -595,7 +605,9 @@ describe('apis/group-album', () => {
         data: {
           feed: {
             feed: {
-              cellCommon: { time, feedId },
+              cellCommon: { time, feedId, ...extra.cellCommon },
+              ...(extra.ownerUin ? { cellUserInfo: { user: { uin: extra.ownerUin } } } : {}),
+              ...(extra.cellMedia ? { cellMedia: extra.cellMedia } : {}),
             },
           },
         },
@@ -616,7 +628,16 @@ describe('apis/group-album', () => {
       const override = extra(cmd);
       if (override) return override;
       if (cmd.endsWith('GetMediaList')) return packPhotoMedia();
-      if (cmd.endsWith('GetQunFeedDetail')) return packFeedDetail();
+      if (cmd.endsWith('GetQunFeedDetail')) {
+        return packFeedDetail('official-feed-id', 1700000123n, {
+          ownerUin: '3119936551',
+          cellCommon: {
+            type: 422,
+            cellId: '421_1_0_12345|album-id|77^||^421_1_0_12345|album-id|photo-lloc^||^0',
+            field6: 3,
+          },
+        });
+      }
       return packCommentOk({
         data: {
           id: 'cmt-1',
@@ -629,14 +650,18 @@ describe('apis/group-album', () => {
     };
   }
 
-  function commentRequestOf(bridge: ReturnType<typeof mockBridge>): DoQunCommentRequest {
+  function commentCallBytes(bridge: ReturnType<typeof mockBridge>): Uint8Array {
     const commentCall = bridge.sendRawPacket.mock.calls.find((call) =>
       String(call[0]).endsWith('DoQunComment'),
     );
     expect(commentCall?.[0]).toBe(
       'QunAlbum.trpc.qzone.webapp_qun_operation.FeedsWriter.DoQunComment',
     );
-    return protobuf_decode<DoQunCommentRequest>(commentCall![1] as Uint8Array);
+    return commentCall![1] as Uint8Array;
+  }
+
+  function commentRequestOf(bridge: ReturnType<typeof mockBridge>): DoQunCommentRequest {
+    return protobuf_decode<DoQunCommentRequest>(commentCallBytes(bridge));
   }
 
   function feedDetailRequestOf(bridge: ReturnType<typeof mockBridge>): GetQunFeedDetailRequest {
@@ -682,7 +707,7 @@ describe('apis/group-album', () => {
           time: 1700000123n,
           feedId: 'official-feed-id',
         },
-        field2: { field1: { uin: '10001' } },
+        field2: { field1: { uin: '3119936551' } },
         field5: {
           albumId: 'album-id',
           batchId: 77n,
@@ -697,6 +722,80 @@ describe('apis/group-album', () => {
       },
     });
     expect(request.body?.reqBody?.field5?.medias?.[0]?.type ?? 0).toBe(0);
+    expect(Buffer.from(commentCallBytes(bridge)).subarray(0, 7).toString('hex'))
+      .toBe('08cf4212001a00');
+  });
+
+  it('falls back to the media uploader when the official feed has no owner cell', async () => {
+    const bridge = mockBridge();
+    bridge.sendRawPacket.mockImplementation(commentMocks((cmd) => {
+      if (cmd.endsWith('GetMediaList')) {
+        return packMediaList({
+          mediaList: [{ type: 1, image: { lloc: 'photo-lloc' }, batchId: 77n, uploader: '3119936551' }],
+        });
+      }
+      if (cmd.endsWith('GetQunFeedDetail')) return packFeedDetail();
+      return undefined;
+    }));
+
+    await new GroupAlbumApi(bridge as never).comment(12345, 'album-id', 'photo-lloc', 'hello');
+
+    expect(commentRequestOf(bridge).body?.reqBody?.field2?.field1?.uin).toBe('3119936551');
+    expect(commentRequestOf(bridge).body?.field5?.user?.uin).toBe('10001');
+  });
+
+  it('copies the official feed media cell instead of a reconstructed lloc-only cell', async () => {
+    const bridge = mockBridge();
+    bridge.sendRawPacket.mockImplementation(commentMocks((cmd) => {
+      if (cmd.endsWith('GetQunFeedDetail')) {
+        return packFeedDetail('official-feed-id', 1700000123n, {
+          ownerUin: '3119936551',
+          cellMedia: {
+            albumId: 'feed-album',
+            batchId: 88n,
+            medias: [{
+              type: 0,
+              image: { lloc: 'feed-lloc' },
+            }],
+          },
+        });
+      }
+      return undefined;
+    }));
+
+    await new GroupAlbumApi(bridge as never).comment(12345, 'album-id', 'photo-lloc', 'hello');
+
+    expect(commentRequestOf(bridge).body?.reqBody?.field5).toMatchObject({
+      albumId: 'feed-album',
+      batchId: 88n,
+      medias: [{
+        image: { lloc: 'feed-lloc' },
+      }],
+    });
+  });
+
+  it('writes only the official comment header fields even when the feed cell has extra locator data', async () => {
+    const cellId = '421_1_0_964445447|album-id|2147483665^||^421_1_0_964445447|album-id|photo-lloc^||^0';
+    const bridge = mockBridge();
+    bridge.sendRawPacket.mockImplementation(commentMocks((cmd) => {
+      if (cmd.endsWith('GetQunFeedDetail')) {
+        return packFeedDetail('422_0_2147483665', 1789315793n, {
+          ownerUin: '3119936551',
+          cellCommon: { type: 422, cellId, field6: 3 },
+        });
+      }
+      return undefined;
+    }));
+
+    await new GroupAlbumApi(bridge as never).comment(964445447, 'album-id', 'photo-lloc', 'hello');
+
+    expect(commentRequestOf(bridge).body?.reqBody?.field1).toMatchObject({
+      time: 1789315793n,
+      feedId: '422_0_2147483665',
+    });
+    expect(commentRequestOf(bridge).body?.reqBody?.field1?.type ?? 0).toBe(0);
+    expect(commentRequestOf(bridge).body?.reqBody?.field1?.cellId ?? '').toBe('');
+    expect(commentRequestOf(bridge).body?.reqBody?.field1?.field6 ?? 0).toBe(0);
   });
 
   it('comments a video with the cover location and video media type', async () => {

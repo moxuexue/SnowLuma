@@ -15,6 +15,7 @@ import { MediaUrlResolver } from './media-url-resolver';
 import {
   GROUP_MESSAGE_EVENT,
   PRIVATE_MESSAGE_EVENT,
+  PRIVATE_NT_MESSAGE_EVENT,
   PRIVATE_SENT_MESSAGE_EVENT,
   hashMessageIdInt32,
   privateMessageEventName,
@@ -157,7 +158,13 @@ export class OneBotInstance {
           );
           if (storedId !== null) return storedId;
         }
-        return hashMessageIdInt32(sequence, sessionId, resolvedEventName);
+        return hashMessageIdInt32(
+          sequence,
+          sessionId,
+          resolvedEventName === PRIVATE_SENT_MESSAGE_EVENT
+            ? PRIVATE_NT_MESSAGE_EVENT
+            : resolvedEventName,
+        );
       },
       mediaSegmentSink: (mediaType, element, data, isGroup, sessionId) =>
         mediaIndexer.remember(mediaType, element, data, isGroup, sessionId),
@@ -195,6 +202,12 @@ export class OneBotInstance {
 
   waitUntilNetworkReady(): Promise<NetworkReconcileResult> {
     return this.networkReady;
+  }
+
+  /** Bridge session edge → OneBot notice. Awaited so offline can leave
+   *  adapters before this generation is disposed. */
+  emitBotStatus(subType: 'online' | 'offline'): Promise<void> {
+    return this.dispatchEvent(makeBotStatusEvent(parseInt(this.uin, 10) || 0, subType));
   }
 
   /** Begin observing request-list-only group invitations after adapters exist. */
@@ -355,11 +368,11 @@ export class OneBotInstance {
     return this.pids.size === 0;
   }
 
-  private dispatchEvent(
+  private async dispatchEvent(
     event: JsonObject,
     source: 'bridge' | 'send' = 'bridge',
     startedAt = Date.now(),
-  ): void {
+  ): Promise<void> {
     if (source === 'bridge') {
       this.cacheMessageEvent(event);
       if (this.consumePendingSelfSentEcho(event)) {
@@ -386,9 +399,11 @@ export class OneBotInstance {
       return;
     }
     this.traceEventHandoffTerminal(event, startedAt, 'reporting_started');
-    void this.networkManager.emitEvent(event).catch((err) => {
+    try {
+      await this.networkManager.emitEvent(event);
+    } catch (err) {
       this.log.warn('emitEvent failed: %s', err instanceof Error ? (err.stack ?? err.message) : String(err));
-    });
+    }
   }
 
   private traceEventHandoffTerminal(
@@ -652,6 +667,21 @@ export class OneBotInstance {
       this.heartbeatTimer = null;
     }
   }
+}
+
+export function makeBotStatusEvent(
+  selfId: number,
+  subType: 'online' | 'offline',
+  time = Math.floor(Date.now() / 1000),
+): JsonObject {
+  return {
+    time,
+    self_id: selfId,
+    post_type: 'notice',
+    notice_type: 'bot_status',
+    sub_type: subType,
+    user_id: selfId,
+  };
 }
 
 function toInt(value: unknown): number {
