@@ -11,6 +11,7 @@ import type {
   NTV2UploadRespBody,
 } from '@snowluma/proto-defs/highway';
 import { protobuf_encode } from '@snowluma/proton';
+import type { PicExtBizInfo } from '@snowluma/proto-defs/element';
 import crypto from 'crypto';
 import type { BridgeContext } from '../bridge-context';
 import { OidbError } from '../oidb-service';
@@ -65,6 +66,8 @@ export interface NtV2UploadParams {
   isGroup: boolean;
   /** Group uin when isGroup, otherwise the recipient's uid string. */
   targetIdOrUid: string | number;
+  /** Existing passive group temp session; never creates or refreshes a session. */
+  tempGroupId?: number;
   /** OIDB command id (e.g. 0x11C4 / 0x11C5 / 0x126E / 0x126D / 0x11EA / 0x11E9). */
   oidbCmd: number;
   /** Service cmd (e.g. 'OidbSvcTrpcTcp.0x11c4_100'). */
@@ -146,10 +149,11 @@ export function runNtv2Upload(params: NtV2UploadParams): Promise<NTV2UploadRespB
   let didPut = false;
   return runWithTraceRequest(async () => {
     moduleLog.trace(() => [
-      'highway_media_start label=%j scope=%s target=%j oidbCmd=%d serviceCmd=%j requestId=%d businessType=%d uploads=%s',
+      'highway_media_start label=%j scope=%s target=%j sourceGroup=%s oidbCmd=%d serviceCmd=%j requestId=%d businessType=%d uploads=%s',
       label,
-      params.isGroup ? 'group' : 'private',
+      params.isGroup ? 'group' : params.tempGroupId !== undefined ? 'group-temp' : 'private',
       String(params.targetIdOrUid),
+      params.tempGroupId === undefined ? '-' : String(params.tempGroupId),
       params.oidbCmd,
       params.serviceCmd,
       params.requestId,
@@ -208,6 +212,7 @@ async function runNtv2UploadOperation(
         oidbCmd,
         isGroup,
         targetIdOrUid,
+        tempGroupId: params.tempGroupId,
         requestId: params.requestId,
         businessType: params.businessType,
         uploadInfo: params.uploadInfo,
@@ -342,14 +347,12 @@ async function runNtv2UploadOperation(
 /**
  * Build the encoded MsgInfo bytes that go inside the outgoing commonElem.
  *
- * `defaultPic` is the image-only fall-back: image uploads inject
- * `bizType` + `textSummary` defaults when the server response omits the
- * `pic` ext-biz-info. PTT and video pass `undefined` here — they leave
- * pic alone unless the server populates it.
+ * `requestedPic` carries image presentation for this send, including the
+ * scene-specific compatibility reserve. PTT and video omit it.
  */
 export function finalizeMediaMsgInfo(
   upload: NTV2UploadRespBody,
-  defaultPic?: { bizType: number; textSummary: string },
+  requestedPic?: PicExtBizInfo,
 ): Uint8Array {
   if (!upload?.msgInfo) throw new Error('upload response missing msgInfo');
 
@@ -358,14 +361,10 @@ export function finalizeMediaMsgInfo(
   }));
 
   const extBizInfo: NonNullable<EncodableMediaMsgInfo['extBizInfo']> = {};
-  if (upload.msgInfo.extBizInfo?.pic) {
-    extBizInfo.pic = { ...upload.msgInfo.extBizInfo.pic };
-    if (defaultPic) {
-      extBizInfo.pic.bizType = extBizInfo.pic.bizType ?? defaultPic.bizType;
-      extBizInfo.pic.textSummary = extBizInfo.pic.textSummary ?? defaultPic.textSummary;
-    }
-  } else if (defaultPic) {
-    extBizInfo.pic = { bizType: defaultPic.bizType, textSummary: defaultPic.textSummary };
+  if (upload.msgInfo.extBizInfo?.pic || requestedPic) {
+    // Upload responses can reuse cached image metadata. Presentation belongs
+    // to this send, so retain resource metadata but apply the requested style.
+    extBizInfo.pic = { ...upload.msgInfo.extBizInfo?.pic, ...requestedPic };
   }
   if (upload.msgInfo.extBizInfo?.video) extBizInfo.video = upload.msgInfo.extBizInfo.video;
   if (upload.msgInfo.extBizInfo?.ptt) extBizInfo.ptt = upload.msgInfo.extBizInfo.ptt;

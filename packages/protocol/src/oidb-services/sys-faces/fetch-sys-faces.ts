@@ -123,29 +123,19 @@ export namespace FetchSysFaces {
   export const deserialize = (_ctx: Deps, body: OidbFetchSysFacesResp): SysFacePackEntry[] => {
     const packs: SysFacePackEntry[] = [];
 
-    // common + special-big share the same content shape.
+    // All panels contain repeated groups, including unnamed/hidden groups.
     for (const [source, content] of [
       ['common', body.commonFace],
       ['special-big', body.specialBigFace],
+      ['magic', body.specialMagicFace],
     ] as const) {
       for (const list of content?.emojiList ?? []) {
         const packIndex = packs.length;
         packs.push({
-          packName: list.emojiPackName ?? '',
+          packName: list.emojiPackName || (source === 'magic' ? 'MagicFace' : ''),
           emojis: emojisToEntries(list.emojiDetail ?? [], source, packIndex),
         });
       }
-    }
-
-    // QQ returns magic faces as a single unnamed bundle. Keep a stable local
-    // name so callers can identify the group across refreshes.
-    const magicEmojis = body.specialMagicFace?.field1?.emojiList ?? [];
-    if (magicEmojis.length > 0) {
-      const packIndex = packs.length;
-      packs.push({
-        packName: 'MagicFace',
-        emojis: emojisToEntries(magicEmojis, 'magic', packIndex),
-      });
     }
 
     return packs;
@@ -172,10 +162,9 @@ export function findFaceEntity(packs: SysFacePackEntry[], faceId: number): SysFa
   return null;
 }
 
-/** True when the catalog metadata selects the existing super-face send path. */
+/** True when the catalog declares an animated sticker representation. */
 export function isSuperFaceEntry(emoji: SysFaceEntry): boolean {
-  if (emoji.aniStickerType == null || emoji.aniStickerPackId == null) return false;
-  return !(emoji.aniStickerType === 1 && emoji.aniStickerPackId === 1);
+  return emoji.aniStickerType != null && emoji.aniStickerType > 0;
 }
 
 export function isSuperFaceId(packs: SysFacePackEntry[], faceId: number): boolean {

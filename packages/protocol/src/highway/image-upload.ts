@@ -1,4 +1,6 @@
 import { createLogger } from '@snowluma/common/logger';
+import { protobuf_encode } from '@snowluma/proton';
+import type { NotOnlineImagePbReserve, PicExtBizInfo } from '@snowluma/proto-defs/element';
 import type { BridgeContext } from '../bridge-context';
 import type { MessageElement } from '../events';
 import { GROUP_IMAGE_CMD_ID, PRIVATE_IMAGE_CMD_ID } from './highway-client';
@@ -114,14 +116,25 @@ export async function uploadImageMsgInfo(
   isGroup: boolean,
   targetIdOrUid: string | number,
   element: MessageElement,
+  tempGroupId?: number,
 ): Promise<Uint8Array> {
   const log = loggerFor(bridge);
   const image = await loadImage(element);
-  log.debug('uploading %d bytes md5=%s... → %s %s',
+  const pic: PicExtBizInfo = {
+    bizType: image.subType,
+    textSummary: image.summary,
+    ...(isGroup
+      ? { extData: { subType: image.subType, textSummary: image.summary } }
+      : { bytesPbReserveC2c: protobuf_encode<NotOnlineImagePbReserve>({
+        subType: image.subType, summary: image.summary,
+      }) }),
+  };
+  log.debug('uploading %d bytes md5=%s... → %s %s%s',
     image.fileSize,
     image.md5Hex.slice(0, 8),
-    isGroup ? 'group' : 'c2c',
-    String(targetIdOrUid));
+    isGroup ? 'group' : tempGroupId !== undefined ? 'group-temp' : 'c2c',
+    String(targetIdOrUid),
+    tempGroupId !== undefined ? ` sourceGroup=${tempGroupId}` : '');
 
   const uploads: MediaSubFileUpload[] = [{
     source: 'top',
@@ -136,6 +149,7 @@ export async function uploadImageMsgInfo(
     bridge,
     isGroup,
     targetIdOrUid,
+    tempGroupId,
     oidbCmd: isGroup ? 0x11C4 : 0x11C5,
     serviceCmd: isGroup ? 'OidbSvcTrpcTcp.0x11c4_100' : 'OidbSvcTrpcTcp.0x11c5_100',
     requestId: 1,
@@ -156,13 +170,7 @@ export async function uploadImageMsgInfo(
     }],
     compatQmsgSceneType: isGroup ? 2 : 1,
     extBizInfo: {
-      pic: {
-        bizType: image.subType,
-        textSummary: image.summary,
-        ...(isGroup
-          ? { reserveTroop: { subType: image.subType } }
-          : { reserveC2c: { subType: image.subType } }),
-      },
+      pic,
       video: { bytesPbReserve: new Uint8Array(0) },
       ptt: {
         bytesReserve: new Uint8Array(0),
@@ -174,5 +182,5 @@ export async function uploadImageMsgInfo(
     label: 'image',
   });
 
-  return finalizeMediaMsgInfo(upload, { bizType: image.subType, textSummary: image.summary });
+  return finalizeMediaMsgInfo(upload, pic);
 }
