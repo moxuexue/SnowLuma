@@ -233,16 +233,9 @@ function previewFromElements(elements: MessageElement[]): string {
 
 function cloneNodeWithElements(node: ForwardNodePayload, elements: MessageElement[]): ForwardNodePayload {
   return {
-    userUin: node.userUin,
-    nickname: node.nickname,
+    ...node,
     elements,
-    time: node.time,
-    msgId: node.msgId,
-    msgSeq: node.msgSeq,
-    groupId: node.groupId,
-    senderCard: node.senderCard,
-    messageType: node.messageType,
-    innerForward: node.innerForward,
+    news: node.news?.map(item => ({ ...item })),
   };
 }
 
@@ -478,23 +471,21 @@ export class ForwardApi {
           type: 'forward',
           resId: inner.resId,
           forwardUuid: inner.uuid,
-          forwardSource: deriveInnerSource(node.innerForward, isGroup),
-          forwardSummary: `查看${node.innerForward.length}条转发消息`,
-          forwardPrompt: '[聊天记录]',
-          forwardNews: previewLinesFromNodes(node.innerForward),
+          forwardSource: node.source && node.source.length > 0
+            ? node.source
+            : deriveInnerSource(node.innerForward, isGroup),
+          forwardSummary: node.summary && node.summary.length > 0
+            ? node.summary
+            : `查看${node.innerForward.length}条转发消息`,
+          forwardPrompt: node.prompt && node.prompt.length > 0
+            ? node.prompt
+            : '[聊天记录]',
+          forwardNews: node.news && node.news.length > 0 ? node.news : previewLinesFromNodes(node.innerForward),
           forwardTSum: node.innerForward.length,
         };
-        processedNodes.push({
-          userUin: node.userUin,
-          nickname: node.nickname,
-          elements: [previewElement],
-          time: node.time,
-          msgId: node.msgId,
-          msgSeq: node.msgSeq,
-          groupId: node.groupId,
-          senderCard: node.senderCard,
-          messageType: node.messageType,
-        });
+        const processed = cloneNodeWithElements(node, [previewElement]);
+        delete processed.innerForward;
+        processedNodes.push(processed);
       } else {
         processedNodes.push(node);
       }
@@ -548,14 +539,8 @@ export class ForwardApi {
     }
 
     forwardResCache.set(resId, uploadReadyNodes.map(node => ({
-      userUin: node.userUin,
-      nickname: node.nickname,
-      elements: node.elements.map(cacheableForwardElement),
-      time: node.time,
-      msgId: node.msgId,
-      msgSeq: node.msgSeq,
+      ...cloneNodeWithElements(node, node.elements.map(cacheableForwardElement)),
       groupId: node.groupId ?? groupId,
-      senderCard: node.senderCard,
       messageType: node.messageType ?? (groupId ? 'group' : 'private'),
     })));
 
@@ -579,17 +564,7 @@ export class ForwardApi {
     const bridge = asBridge(this.ctx);
     const cached = forwardResCache.get(resId);
     if (cached) {
-      const nodes = cached.map(node => ({
-        userUin: node.userUin,
-        nickname: node.nickname,
-        elements: [...node.elements],
-        time: node.time,
-        msgId: node.msgId,
-        msgSeq: node.msgSeq,
-        groupId: node.groupId,
-        senderCard: node.senderCard,
-        messageType: node.messageType,
-      }));
+      const nodes = cloneNodes(cached);
       // Inner nodes seeded by consumePiggybacks are cached un-enriched; enrich
       // on read (a no-op once names are present) and persist so later hits skip.
       if (await this.enrichSenders(nodes)) forwardResCache.set(resId, cloneNodes(nodes));
@@ -863,15 +838,5 @@ function cacheableForwardElement(element: MessageElement): MessageElement {
 }
 
 function cloneNodes(nodes: ForwardNodePayload[]): ForwardNodePayload[] {
-  return nodes.map(node => ({
-    userUin: node.userUin,
-    nickname: node.nickname,
-    elements: [...node.elements],
-    time: node.time,
-    msgId: node.msgId,
-    msgSeq: node.msgSeq,
-    groupId: node.groupId,
-    senderCard: node.senderCard,
-    messageType: node.messageType,
-  }));
+  return nodes.map(node => cloneNodeWithElements(node, [...node.elements]));
 }

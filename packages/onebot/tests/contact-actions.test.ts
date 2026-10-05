@@ -228,8 +228,42 @@ describe('onebot/contact-actions / getGroupList', () => {
       group_remark: '工作群',
       member_count: 0, max_member_count: 500,
       group_create_time: 0, group_level: 0, group_memo: '',
+      group_description: '',
       group_all_shut: -1,
     }]);
+  });
+
+  // #490: group_description must carry the description itself, not a copy of
+  // group_memo (which prefers the announcement).
+  it('exposes the group description separately from the memo (#490)', async () => {
+    const fetched = [{
+      ...makeGroup(150, 'Both Set'),
+      memo: '公告正文',
+      description: '简介正文',
+    }];
+    const bridge = fakeBridge({
+      fetchGroupList: vi.fn(async () => fetched),
+      identity: fakeIdentity({ groups: fetched }),
+    });
+
+    const out = await getGroupList(bridge);
+
+    expect(out[0]).toMatchObject({
+      group_memo: '公告正文',
+      group_description: '简介正文',
+    });
+  });
+
+  it('reports an empty group_description when QQ returns no description (#490)', async () => {
+    const fetched = [makeGroup(160, 'No Description')];
+    const bridge = fakeBridge({
+      fetchGroupList: vi.fn(async () => fetched),
+      identity: fakeIdentity({ groups: fetched }),
+    });
+
+    const out = await getGroupList(bridge);
+
+    expect(out[0]).toMatchObject({ group_memo: '', group_description: '' });
   });
 
   it('skips fetch when cache is populated and noCache is omitted', async () => {
@@ -467,6 +501,24 @@ describe('onebot/contact-actions / getGroupMemberList', () => {
 });
 
 describe('onebot/contact-actions / getGroupMemberInfo', () => {
+  it('includes account level and completed account years without changing group level', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-04T00:00:00Z'));
+    try {
+      const profile = { ...makeProfile(88, 'member'), level: 64, regTime: Date.parse('2016-10-05T00:00:00Z') / 1000 };
+      const fetchUserProfile = vi.fn(async () => profile);
+      const bridge = fakeBridge({
+        fetchUserProfile,
+        identity: fakeIdentity({ findGroupMember: () => makeMember(88, 'member') }),
+      });
+      expect(await getGroupMemberInfo(bridge, 1400, 88)).toMatchObject({ level: '1', qq_level: 64, qage: 9 });
+      vi.setSystemTime(new Date('2026-10-05T00:00:00Z'));
+      expect(await getGroupMemberInfo(bridge, 1400, 88)).toMatchObject({ qage: 10 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns the cached member when present and noCache is false', async () => {
     const member = makeMember(44, 'dave', 'D');
     const bridge = fakeBridge({
@@ -581,6 +633,27 @@ describe('onebot/contact-actions / getGroupMemberInfo', () => {
 });
 
 describe('onebot/contact-actions / getStrangerInfo', () => {
+  it('exposes available compatibility fields without fabricating login days', async () => {
+    const bridge = fakeBridge({ fetchUserProfile: vi.fn(async () => ({
+      ...makeProfile(55555, 'member'), qid: 'my_qid', level: 64, regTime: 1_200_000_000,
+      svipFlag: true, yearVipFlag: false, vipLevel: 7,
+    })) });
+    const out = await getStrangerInfo(bridge, 55555);
+    expect(out).toMatchObject({
+      uid: 'u_55555', qid: 'my_qid', qq_level: 64, qqLevel: 64, level: 64,
+      reg_time: 1_200_000_000, is_vip: true, is_years_vip: false, vip_level: 7,
+    });
+    expect(out).not.toHaveProperty('login_days');
+  });
+
+  it('omits unavailable registration and membership values', async () => {
+    const bridge = fakeBridge({ fetchUserProfile: vi.fn(async () => makeProfile(55555, 'member')) });
+    const out = await getStrangerInfo(bridge, 55555);
+    for (const field of ['reg_time', 'is_vip', 'is_years_vip', 'vip_level']) {
+      expect(out).not.toHaveProperty(field);
+    }
+  });
+
   it('returns a fetched profile', async () => {
     const bridge = fakeBridge({
       fetchUserProfile: vi.fn(async () => makeProfile(

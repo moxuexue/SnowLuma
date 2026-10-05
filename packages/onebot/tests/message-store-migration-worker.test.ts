@@ -9,6 +9,7 @@ import {
   inspectMessageStoreMigration,
   MessageStoreMigrator,
   prepareMessageStoreDatabase,
+  type MessageStoreMigrationPreparation,
 } from '../src/message-store-migration';
 import {
   isMessageStoreMigrationWorkerData,
@@ -25,20 +26,24 @@ function workerPayload(dbPath: string): MessageStoreMigrationWorkerData {
 function createControlPort(): {
   port: MessagePort;
   messages: MessageStoreMigrationWorkerMessage[];
+  preparations: MessageStoreMigrationPreparation[];
   send(message: unknown): void;
   listenerCount(): number;
   } {
   const messages: MessageStoreMigrationWorkerMessage[] = [];
+  const preparations: MessageStoreMigrationPreparation[] = [];
   const events = new EventEmitter();
   return {
     port: {
       on: events.on.bind(events),
       off: events.off.bind(events),
       postMessage(message: MessageStoreMigrationWorkerMessage) {
-        messages.push(message);
+        if (message.kind === 'preparation') preparations.push(message.progress);
+        else messages.push(message);
       },
     } as unknown as MessagePort,
     messages,
+    preparations,
     send(message: unknown) {
       events.emit('message', message);
     },
@@ -127,6 +132,7 @@ describe('runMessageStoreMigrationWorker', () => {
     const close = vi.spyOn(MessageStoreMigrator.prototype, 'close');
 
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
     expect(control.messages).toEqual([{ kind: 'ready' }]);
     expect(control.listenerCount()).toBe(1);
 
@@ -154,6 +160,7 @@ describe('runMessageStoreMigrationWorker', () => {
     const dbPath = path.join(tmpDir, 'messages.db');
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('go');
     control.send({ kind: 'start' });
@@ -172,12 +179,44 @@ describe('runMessageStoreMigrationWorker', () => {
     ]);
   });
 
+  it('forwards preparation timings only after start without opening a worker log transport', async () => {
+    const { subscribeLogs } = await import('@snowluma/common/logger');
+    const { getFileTransport } = await import('@snowluma/common/log-file-transport');
+    const fileTransport = getFileTransport();
+    const write = vi.spyOn(fileTransport, 'write').mockImplementation(() => {});
+    const logs: string[] = [];
+    const unsubscribe = subscribeLogs(entry => logs.push(entry.scope));
+    vi.stubEnv('SNOWLUMA_LOG_FILE', '1');
+    const dbPath = path.join(tmpDir, 'messages.db');
+    seedUnclassified(dbPath, 1);
+    const control = createControlPort();
+    try {
+      const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+      await Promise.resolve();
+      expect(control.preparations).toEqual([]);
+      control.send('start');
+      await running;
+      expect(control.preparations).toEqual([
+        { stage: 'started' },
+        { stage: 'indexed', elapsedMs: expect.any(Number) },
+        { stage: 'counted', total: 1, elapsedMs: expect.any(Number) },
+      ]);
+      expect(control.preparations.filter(progress => progress.stage !== 'started').every(progress => progress.elapsedMs >= 0)).toBe(true);
+      expect(logs).toEqual([]);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('returns after cancel without posting progress', async () => {
     const dbPath = path.join(tmpDir, 'messages.db');
     seedUnclassified(dbPath, 1);
     const control = createControlPort();
     const runBatch = vi.spyOn(MessageStoreMigrator.prototype, 'runBatch');
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('cancel');
     await running;
@@ -198,6 +237,7 @@ describe('runMessageStoreMigrationWorker', () => {
     const control = createControlPort();
     const runBatch = vi.spyOn(MessageStoreMigrator.prototype, 'runBatch');
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     control.send('cancel');
@@ -212,6 +252,7 @@ describe('runMessageStoreMigrationWorker', () => {
     seedUnclassified(dbPath, 1);
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     await running;
@@ -236,6 +277,7 @@ describe('runMessageStoreMigrationWorker', () => {
     seedUnclassified(dbPath, 201);
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     await running;
@@ -269,6 +311,7 @@ describe('runMessageStoreMigrationWorker', () => {
     seedUnclassified(dbPath, 201);
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     await Promise.resolve();
@@ -323,6 +366,7 @@ describe('runMessageStoreMigrationWorker', () => {
     const dbPath = path.join(tmpDir, 'messages.db');
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
     expect(control.messages).toEqual([{ kind: 'ready' }]);
 
     const db = new DatabaseSync(dbPath);
@@ -334,7 +378,7 @@ describe('runMessageStoreMigrationWorker', () => {
 
     expect(control.messages).toEqual([
       { kind: 'ready' },
-      { kind: 'failed', message: 'no such table: messages' },
+      { kind: 'failed', message: 'no such table: main.messages' },
     ]);
   });
 
@@ -353,6 +397,7 @@ describe('runMessageStoreMigrationWorker', () => {
     const control = createControlPort();
     const close = vi.spyOn(MessageStoreMigrator.prototype, 'close');
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     await running;
@@ -371,6 +416,7 @@ describe('runMessageStoreMigrationWorker', () => {
     });
     const control = createControlPort();
     const running = runMessageStoreMigrationWorker(workerPayload(dbPath), control.port);
+    await Promise.resolve(); // Account readiness follows asynchronous media preparation.
 
     control.send('start');
     await running;

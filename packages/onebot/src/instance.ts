@@ -62,7 +62,7 @@ export class OneBotInstance {
   private lifecycleTail: Promise<void>;
   private readonly rkeyCache: RKeyCache;
   private readonly ctx: OneBotInstanceContext;
-  /** Process-uptime baseline for the `#sl` status reply. */
+  /** Account-session uptime shared by the status action and `#sl`. */
   private readonly startedAt = Date.now();
   /** Per-conversation last-reply timestamp for the `#sl` cooldown. */
   private readonly statusCommandCooldown = new Map<string, number>();
@@ -132,7 +132,7 @@ export class OneBotInstance {
       : moduleLog;
 
     this.rkeyCache = new RKeyCache(globalSettings.rkey);
-    this.mediaStore = new MediaStore(path.join('data', this.uin, 'media.db'));
+    this.mediaStore = new MediaStore(path.join('data', this.uin, 'messages.db'));
     this.messageStore = new MessageStore(path.join('data', this.uin, 'messages.json'));
     this.reactionStore = new ReactionStore(path.join('data', this.uin, 'reactions.db'));
     const mediaUrlResolver = new MediaUrlResolver(this.bridge, this.rkeyCache);
@@ -143,7 +143,7 @@ export class OneBotInstance {
         this.rkeyCache.resolveImageUrl(this.bridge, element, isGroup),
       mediaUrlResolver: (element, isGroup, sessionId) =>
         mediaUrlResolver.resolve(element, isGroup, sessionId),
-      messageIdResolver: (isGroup, sessionId, sequence, eventName, timestamp) => {
+      messageIdResolver: (isGroup, sessionId, sequence, eventName, timestamp, replyElements) => {
         const resolvedEventName = eventName
           || (isGroup ? GROUP_MESSAGE_EVENT : PRIVATE_MESSAGE_EVENT);
         if (!isGroup
@@ -155,6 +155,7 @@ export class OneBotInstance {
             sequence,
             resolvedEventName === PRIVATE_SENT_MESSAGE_EVENT,
             timestamp,
+            replyElements,
           );
           if (storedId !== null) return storedId;
         }
@@ -180,6 +181,7 @@ export class OneBotInstance {
       converterCtx: this.converterCtx,
       config,
       musicSignUrl: globalSettings.musicSignUrl,
+      getUptimeMs: () => Math.max(0, Date.now() - this.startedAt),
       cacheMessageMeta: (messageId, meta) => this.cacheMessageMeta(messageId, meta),
       dispatchEvent: (event, source = 'bridge', startedAt) => this.dispatchEvent(event, source, startedAt),
     };
@@ -477,7 +479,7 @@ export class OneBotInstance {
       version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev',
       platform: process.platform,
       arch: process.arch,
-      uptimeMs: Date.now() - this.startedAt,
+      uptimeMs: this.ctx.getUptimeMs(),
     });
     if (isGroup) await sendGroupMessage(this.ctx, sessionId, text, true);
     else await sendPrivateMessage(this.ctx, sessionId, text, true);

@@ -13,6 +13,7 @@ export const groupInfoReturnsSchema = {
     group_create_time: { type: 'integer', description: '建群时间戳（秒）' },
     group_level: { type: 'integer', description: '群等级' },
     group_memo: { type: 'string', description: '群简介 / 公告预览' },
+    group_description: { type: 'string', description: '群简介（公告不算；未加入的群为空）' },
     group_all_shut: { type: 'integer', enum: [-1, 0], description: '是否开启全员禁言（-1 开启，0 关闭）' },
   },
   required: [
@@ -40,6 +41,7 @@ export const actions = [
           group_create_time: { type: 'integer', description: '建群时间戳（秒）' },
           group_level: { type: 'integer', description: '群等级（列表批量场景恒 0，详见 get_group_info）' },
           group_memo: { type: 'string', description: '群简介 / 公告预览' },
+          group_description: { type: 'string', description: '群简介（公告不算；未加入的群为空）' },
           group_all_shut: { type: 'integer', enum: [-1, 0], description: '是否开启全员禁言（-1 开启，0 关闭）' },
         },
         required: [
@@ -77,6 +79,7 @@ export const actions = [
         group_create_time: 0,
         group_level: 0,
         group_memo: '',
+        group_description: '',
         group_all_shut: 0,
       };
       if (ctx.getGroupInfo) {
@@ -108,6 +111,8 @@ export const actions = [
           last_sent_time: { type: 'integer', description: '最后发言时间戳（秒）' },
           shut_up_timestamp: { type: 'integer', description: '禁言结束时间戳（秒，未禁言时为 0）' },
           level: { type: 'string', description: '群等级' },
+          qq_level: { type: 'integer', description: 'QQ 等级，仅在账号资料可用时返回' },
+          qage: { type: 'integer', description: '按注册时间计算的完整周年数（UTC），注册时间不可用时省略' },
           role: { type: 'string', enum: ['owner', 'admin', 'member'], description: '角色' },
           title: { type: 'string', description: '专属头衔' },
           area: { type: 'string', description: '地区（QQ NT 不提供，恒空）' },
@@ -151,6 +156,8 @@ export const actions = [
         last_sent_time: { type: 'integer', description: '最后发言时间戳（秒）' },
         shut_up_timestamp: { type: 'integer', description: '禁言结束时间戳（秒，未禁言时为 0）' },
         level: { type: 'string', description: '群等级' },
+        qq_level: { type: 'integer', description: 'QQ 等级，仅在账号资料可用时返回' },
+        qage: { type: 'integer', description: '按注册时间计算的完整周年数（UTC），注册时间不可用时省略' },
         role: { type: 'string', enum: ['owner', 'admin', 'member'], description: '角色' },
         title: { type: 'string', description: '专属头衔' },
         area: { type: 'string', description: '地区（QQ NT 不提供，恒空）' },

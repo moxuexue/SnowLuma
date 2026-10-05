@@ -4,6 +4,7 @@ import type {
 } from '@snowluma/proto-defs/action';
 import type { Elem, GroupFileExtra, MarketFacePbReserve, MsgInfo, PokeExtra, QFaceExtra, QSmallFaceExtra } from '@snowluma/proto-defs/element';
 import { protobuf_decode, protobuf_encode } from '@snowluma/proton';
+import { createLogger } from '@snowluma/common/logger';
 import { randomUUID } from 'crypto';
 import { deflateSync } from 'zlib';
 import type { BridgeContext } from './bridge-context';
@@ -22,6 +23,7 @@ import { uploadPttMsgInfo } from './highway/ptt-upload';
 import { uploadVideoMsgInfo } from './highway/video-upload';
 
 type ProtoElem = Partial<Elem>;
+const log = createLogger('Protocol.Elements');
 
 export interface SendContext {
   bridge: BridgeContext;
@@ -58,7 +60,7 @@ function makeTextElem(text: string): ProtoElem {
 //   animated (unless large=false)              → CommonElem 37 + QFaceExtra
 //   other id ≥ 260                              → CommonElem 33 + QSmallFaceExtra
 //   classic id < 260                            → legacy FaceElem
-async function makeFaceElem(faceId: number, large: boolean, ctx?: SendContext): Promise<ProtoElem> {
+async function makeFaceElem(faceId: number, large: boolean, resultId: string | undefined, ctx?: SendContext): Promise<ProtoElem> {
   // With a live bridge, wait for the authoritative catalog. Login normally
   // preloads it, while this await closes the reconnect / first-send race.
   const resolved = ctx
@@ -75,11 +77,20 @@ async function makeFaceElem(faceId: number, large: boolean, ctx?: SendContext): 
           qsid: faceId,
           sourceType: 1,
           stickerType: wire.stickerType,
+          resultId,
           randomType: 1,
         }),
         businessType: wire.stickerType < 4 ? wire.stickerType : 1,
       },
     };
+  }
+  if (resultId !== undefined) {
+    throw new MessageElementValidationError(
+      'INVALID_FIELD',
+      `face.resultId requires animation metadata for face ${faceId}`,
+      'face',
+      'resultId',
+    );
   }
   if (wire.kind === 'small') {
     return {
@@ -150,6 +161,10 @@ function makeReplyElem(element: MessageElement): ProtoElem {
     srcMsg.time = element.replyTime;
   }
 
+  const previews = (element.replyElements ?? []).filter(e => e.type === 'text' && e.text);
+  if (previews.length) {
+    srcMsg.elemsRaw = previews.map(e => protobuf_encode<Elem>({ text: { str: e.text! } }));
+  }
   return { srcMsg };
 }
 
@@ -252,16 +267,41 @@ function makeMarketFaceElem(element: MessageElement): ProtoElem {
   };
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .replace(/\t/g, '&#x9;')
+    .replace(/\n/g, '&#xA;')
+    .replace(/\r/g, '&#xD;');
+}
+
+function xmlPreviewText(value: string): string {
+  // Unicode mode preserves supplementary characters and replaces lone surrogates.
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu, '\uFFFD');
+}
+
+function escapeForwardPreview(value: string, field: string): string {
+  const normalized = xmlPreviewText(value);
+  if (normalized !== value) {
+    log.debug('forward preview characters normalized: field=%s', field);
+  }
+  return escapeXml(normalized);
+}
+
 function makeForwardElem(element: MessageElement): ProtoElem {
   const resId = (element.resId ?? '').trim();
   if (!resId) {
     throw new Error('forward resId is required');
   }
 
-  // `uniseq` MUST round-trip between the preview JSON and the outer
-  // upload's piggyback `actionCommand` for nested forwards to resolve
-  // without an extra server hit. Generate one fresh if absent (flat
-  // forwards don't piggyback anyway, so the value is cosmetic there).
+  // Nested forwards must round-trip this value between the LightApp preview
+  // and the outer upload's piggyback `actionCommand`. Flat forwards have no
+  // piggyback entry and use the generated value as the RichMsg `m_fileName`.
   const uniseq = (element.forwardUuid ?? '').trim() || randomUUID();
 
   const source = element.forwardSource && element.forwardSource.length > 0
@@ -278,14 +318,38 @@ function makeForwardElem(element: MessageElement): ProtoElem {
     ? element.forwardTSum
     : Math.max(news.length, 1);
 
-  // LightApp / `com.tencent.multimsg` is the modern wire shape both
-  // QQ-NT, Lagrange.Core, and NapCat emit and decode. The older
-  // `richMsg serviceID=35 m_resid=…` XML still renders on mobile QQ
-  // but it doesn't carry `uniseq`, so nested forwards lose the link
-  // between the inner preview and the piggybacked actions on the
-  // outer's LongMsgResult — cross-checked against
-  // `dev/Lagrange.Core/.../Message/Entity/MultiMsgEntity.cs:43-115`
-  // and `dev/NapCatQQ/.../helper/forward-msg-builder.ts:52-122`.
+  // Flat outer forwards use serviceID=35 RichMsg. Nested previews keep
+  // LightApp because their forwardUuid must match a piggyback actionCommand
+  // in the outer long-message body.
+  if (!element.forwardUuid) {
+    if (xmlPreviewText(resId) !== resId) {
+      throw new MessageElementValidationError(
+        'INVALID_FIELD', 'forward resId contains invalid characters', 'forward', 'resId',
+      );
+    }
+    const escapedSource = escapeForwardPreview(source, 'source');
+    const titles = news.map((item, index) =>
+      '<title color="#777777" size="26">' + escapeForwardPreview(item.text ?? '', `news[${index}]`) + '</title>',
+    ).join('');
+    const xml = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?> "
+      + '<msg serviceID="35" templateID="1" action="viewMultiMsg"'
+      + ' brief="' + escapeForwardPreview(prompt, 'prompt') + '"'
+      + ' m_fileName="' + escapeXml(uniseq) + '"'
+      + ' m_resid="' + escapeXml(resId) + '"'
+      + ' tSum="' + tSum + '" flag="3">'
+      + '<item layout="1"> '
+      + '<title color="#000000" size="34">' + escapedSource + '</title>'
+      + titles
+      + ' <hr></hr> <summary color="#808080">' + escapeForwardPreview(summary, 'summary') + '</summary>'
+      + '</item> <source name="' + escapedSource + '"></source> </msg>';
+    return {
+      richMsg: {
+        template1: makeDeflatedPayload(xml),
+        serviceId: 35,
+      },
+    };
+  }
+
   const lightApp = {
     app: 'com.tencent.multimsg',
     config: {
@@ -574,7 +638,7 @@ export async function buildSendElems(elements: MessageElement[], ctx?: SendConte
         break;
 
       case 'face':
-        result.push(await makeFaceElem(elem.faceId, elem.large ?? true, ctx));
+        result.push(await makeFaceElem(elem.faceId, elem.large ?? true, elem.resultId, ctx));
         break;
 
       case 'poke':

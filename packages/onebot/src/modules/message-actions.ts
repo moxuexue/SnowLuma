@@ -1,3 +1,4 @@
+import { isMessageMedia, type MessageMedia } from '../message-media';
 import { createLogger } from '@snowluma/common/logger';
 import type { BridgeInterface } from '@snowluma/core/bridge-interface';
 import { findDatalineDeviceByUin } from '@snowluma/protocol/dataline/device-contacts';
@@ -25,6 +26,27 @@ import { sameSelfSentMessage } from '../self-sent-event';
 import { hasAuthoritativeSequence, type JsonArray, type JsonObject, type JsonValue, type MessageMeta } from '../types';
 
 const log = createLogger('OneBot');
+
+function replyPreviewElements(message: unknown): MessageElement[] {
+  if (!Array.isArray(message)) return [];
+  const labels: Record<string, string> = {
+    image: '[图片]', record: '[语音]', video: '[视频]', file: '[文件]',
+    face: '[表情]', mface: '[表情]', forward: '[聊天记录]',
+    json: '[卡片]', xml: '[卡片]', markdown: '[Markdown]',
+  };
+  const parts: string[] = [];
+  for (const segment of message) {
+    if (!segment || typeof segment !== 'object') continue;
+    const data = segment.data;
+    if (!data || typeof data !== 'object') continue;
+    if (segment.type === 'text' && typeof data.text === 'string') parts.push(data.text);
+    else if (segment.type === 'at') parts.push(data.qq === 'all' ? '@全体成员' : `@${data.qq ?? ''}`);
+    else if (typeof segment.type === 'string' && labels[segment.type]) parts.push(labels[segment.type]);
+  }
+  const text = parts.join('');
+  return text ? [{ type: 'text', text }] : [];
+}
+
 
 // A video larger than QQ's Highway video ceiling can't be sent through the
 // element pipeline — it must fall back to a regular file upload. The fallback
@@ -840,6 +862,7 @@ export async function sendPrivateMessage(
           senderUin,
           time,
           random: meta?.random ?? 0,
+          elements: replyPreviewElements(event.message),
           sequenceAuthoritative: meta?.sequenceAuthoritative,
         };
       }
@@ -1081,6 +1104,7 @@ export async function sendGroupMessage(
             ? event.time
             : parseInt(String(event.time || '0'), 10),
           random: meta?.random ?? 0,
+          elements: replyPreviewElements(event.message),
           sequenceAuthoritative: meta?.sequenceAuthoritative,
         };
       }
@@ -1264,7 +1288,7 @@ export async function forwardSingleMessage(
   const parsed = await parseMessage(content, false);
   if (parsed.length === 0) throw new Error('message has no content');
 
-  const elements = await prepareSingleForwardElements(ref, parsed, target);
+  const elements = await prepareSingleForwardElements(ref, restoreHistoricalMedia(ref, parsed, messageId), target);
 
   let receipt;
   let messageIdOut: number;
@@ -1296,7 +1320,7 @@ async function prepareSingleForwardElements(
   const out: MessageElement[] = [];
   for (const element of elements) {
     if (element.type !== 'forward') {
-      out.push(enrichForForward(ref, element));
+      out.push(isMessageMedia(element) ? element : enrichForForward(ref, element));
       continue;
     }
     const resId = element.resId.trim();
@@ -1372,7 +1396,29 @@ async function expandForwardNodeForTarget(
   return { ...node, elements };
 }
 
-function enrichForForward(ref: OneBotInstanceContext, element: MessageElement): MessageElement {
+function restoreHistoricalMedia(
+  ref: OneBotInstanceContext,
+  elements: MessageElement[],
+  messageId: number,
+): MessageElement[] {
+  if (!elements.some(isMessageMedia)) return elements;
+  const snapshots = ref.messageStore.findMedia(messageId);
+  let index = 0;
+  const restored = elements.map(element => {
+    if (!isMessageMedia(element)) return element;
+    const snapshot = snapshots?.[index++];
+    if (snapshots && (!snapshot || snapshot.type !== element.type)) {
+      throw new Error(`historical media metadata does not match message ${messageId}`);
+    }
+    return enrichForForward(ref, element, snapshot);
+  });
+  if (snapshots && index !== snapshots.length) {
+    throw new Error(`historical media metadata does not match message ${messageId}`);
+  }
+  return restored;
+}
+
+function enrichForForward(ref: OneBotInstanceContext, element: MessageElement, snapshot?: MessageMedia): MessageElement {
   if (element.type === 'forward') {
     throw new Error('merged forward must be regenerated for the target chat');
   }
@@ -1393,14 +1439,14 @@ function enrichForForward(ref: OneBotInstanceContext, element: MessageElement): 
   // the keys MediaStore aliases under. After parseMessage, the segment's
   // `data.file` lands on `element.url` for all three types.
   const lookupKey = element.url || element.fileName || element.fileId || '';
-  if (!lookupKey) {
+  if (!lookupKey && !snapshot) {
     throw new Error(`forward ${element.type} missing cache key`);
   }
 
   if (element.type === 'image') {
-    const cached = ref.mediaStore.findImage(lookupKey);
+    const cached = snapshot?.type === 'image' ? snapshot : ref.mediaStore.findImage(lookupKey, 'legacy');
     if (!cached || !cached.md5Hex || !cached.sha1Hex || !cached.width || !cached.height || !cached.picFormat) {
-      throw new Error('forward image fingerprint not cached (legacy image or expired)');
+      throw new Error('historical image metadata is incomplete; fetch the original message again');
     }
     return {
       ...element,
@@ -1419,9 +1465,9 @@ function enrichForForward(ref: OneBotInstanceContext, element: MessageElement): 
   }
 
   if (element.type === 'record') {
-    const cached = ref.mediaStore.findRecord(lookupKey);
+    const cached = snapshot?.type === 'record' ? snapshot : ref.mediaStore.findRecord(lookupKey, 'legacy');
     if (!cached || !cached.md5Hex || !cached.sha1Hex) {
-      throw new Error('forward record fingerprint not cached');
+      throw new Error('historical voice metadata is incomplete; fetch the original message again');
     }
     return {
       ...element,
@@ -1438,9 +1484,9 @@ function enrichForForward(ref: OneBotInstanceContext, element: MessageElement): 
   }
 
   if (element.type === 'video') {
-    const cached = ref.mediaStore.findVideo(lookupKey);
+    const cached = snapshot?.type === 'video' ? snapshot : ref.mediaStore.findVideo(lookupKey, 'legacy');
     if (!cached || !cached.md5Hex || !cached.sha1Hex) {
-      throw new Error('forward video fingerprint not cached');
+      throw new Error('historical video metadata is incomplete; fetch the original message again');
     }
     log.warn('video forward uses a fallback thumbnail (original thumb not cached)');
     return {
@@ -1485,6 +1531,9 @@ export async function getForwardMessage(
       nickname: node.nickname,
     };
     if (isGroup) sender.card = node.senderCard ?? '';
+    if (node.title !== undefined && node.title.length > 0) {
+      sender.title = node.title;
+    }
 
     const message: JsonObject = {
       self_id: ref.selfId,
@@ -1623,14 +1672,33 @@ function isNestedNodeArray(value: JsonValue): boolean {
   return true;
 }
 
-function assertForwardNodeMetadataIsScalar(
+function assertForwardNodeMetadata(
   nodeData: JsonObject,
   index: number,
 ): void {
   for (const [field, value] of Object.entries(nodeData)) {
     if (field === 'content' || field === 'message') continue;
+    if (value === undefined) continue;
+    if (field === 'news') {
+      if (isForwardNewsArray(value)) continue;
+      throw new MessageElementValidationError(
+        'INVALID_FIELD',
+        `forward messages[${index}].news must be an array of objects with string text`,
+        'node',
+        field,
+      );
+    }
+    if (field === 'title' || field === 'source' || field === 'summary' || field === 'prompt') {
+      if (typeof value === 'string') continue;
+      throw new MessageElementValidationError(
+        'INVALID_FIELD',
+        `forward messages[${index}].${field} must be a string`,
+        'node',
+        field,
+      );
+    }
     if (
-      value === undefined || value === null || typeof value === 'string'
+      value === null || typeof value === 'string'
       || typeof value === 'number' || typeof value === 'boolean'
     ) continue;
     throw new MessageElementValidationError(
@@ -1642,17 +1710,28 @@ function assertForwardNodeMetadataIsScalar(
   }
 }
 
+/** Whether a value looks like OneBot preview news: `Array<{ text: string }>`. */
+function isForwardNewsArray(value: JsonValue): value is Array<{ text: string }> {
+  if (!Array.isArray(value)) return false;
+  for (const item of value) {
+    const obj = asJsonObject(item);
+    if (!obj || typeof obj.text !== 'string') return false;
+  }
+  return true;
+}
+
 function assertForwardMessageInputPolicies(
   ref: OneBotInstanceContext,
   messages: JsonValue,
   depth = 0,
 ): void {
   if (!Array.isArray(messages) || depth >= MAX_FORWARD_DEPTH) return;
-  for (const item of messages) {
+  for (const [index, item] of messages.entries()) {
     const segment = asJsonObject(item);
     if (!segment) continue;
     const nodeData = segment.type === 'node' ? asJsonObject(segment.data) : segment;
     if (!nodeData) continue;
+    assertForwardNodeMetadata(nodeData, index);
 
     const messageId = parseForwardMessageId(nodeData.id ?? nodeData.message_id);
     if (messageId !== 0) {
@@ -1750,7 +1829,7 @@ async function parseForwardNodes(
           'data',
         );
       }
-      assertForwardNodeMetadataIsScalar(nodeData, index);
+      assertForwardNodeMetadata(nodeData, index);
       return { segment, nodeData };
     }
 
@@ -1764,7 +1843,7 @@ async function parseForwardNodes(
         'content',
       );
     }
-    assertForwardNodeMetadataIsScalar(segment, index);
+    assertForwardNodeMetadata(segment, index);
     return { segment, nodeData: segment };
   });
 
@@ -1802,7 +1881,7 @@ async function parseForwardNodes(
         );
       }
       const content = (event.message ?? event.raw_message ?? '') as JsonValue;
-      const elements = await parseMessage(content, false);
+      const elements = restoreHistoricalMedia(ref, await parseMessage(content, false), messageId);
       if (elements.length > 0) {
         const messageType = event.message_type === 'group' ? 'group' : 'private';
         const groupIdValue = toPositiveInt(event.group_id);
@@ -1868,6 +1947,20 @@ async function parseForwardNodes(
     }
 
     const node: ForwardNodePayload = { userUin, nickname, elements };
+    // Forward optional preview news lines (OneBot `data.news`) onto the
+    // payload so nested-forward bubble previews can prefer caller-supplied
+    // lines over auto-generated ones. Only accepted when the array shape
+    // is valid (already asserted by assertForwardNodeMetadata).
+    if (isForwardNewsArray(nodeData.news)) {
+      node.news = nodeData.news.map(item => ({ text: item.text }));
+    }
+    // Forward optional OneBot bubble-preview metadata so nested-forward
+    // cards can prefer caller-supplied titles/source/summary/prompt over
+    // auto-derived ones (types already asserted above).
+    if (nodeData.title !== undefined && typeof nodeData.title === 'string') node.title = nodeData.title;
+    if (nodeData.source !== undefined && typeof nodeData.source === 'string') node.source = nodeData.source;
+    if (nodeData.summary !== undefined && typeof nodeData.summary === 'string') node.summary = nodeData.summary;
+    if (nodeData.prompt !== undefined && typeof nodeData.prompt === 'string') node.prompt = nodeData.prompt;
     // Honour an explicit per-node display time (OneBot `data.time`, unix
     // seconds) so a custom forward can set/back-date each node's timestamp
     // (#209). The wire field is uint32, so reject a millisecond value or any

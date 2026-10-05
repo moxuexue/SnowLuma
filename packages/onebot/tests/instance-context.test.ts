@@ -112,6 +112,7 @@ function makeRef(overrides: {
   reactionStore?: Record<string, unknown>;
   converterCtx?: Record<string, unknown>;
   extraBridge?: Record<string, unknown>;
+  getUptimeMs?: () => number;
 } = {}): {
   ref: OneBotInstanceContext;
   api: ReturnType<typeof buildApiContext>;
@@ -128,6 +129,7 @@ function makeRef(overrides: {
   });
 
   const messageStore = {
+    findMedia: () => null,
     findEvent: (messageId: number) => events.get(messageId) ?? null,
     findMeta: (messageId: number) => metas.get(messageId) ?? null,
     storeMetas: (entries: ReadonlyArray<{ messageId: number; meta: MessageMeta }>) => {
@@ -253,6 +255,7 @@ function makeRef(overrides: {
     } as OneBotConfig,
     cacheMessageMeta,
     dispatchEvent,
+    getUptimeMs: overrides.getUptimeMs ?? (() => 0),
   } as unknown as OneBotInstanceContext;
 
   return {
@@ -266,6 +269,17 @@ function makeRef(overrides: {
 }
 
 describe('buildApiContext capabilities', () => {
+  it('reads current uptime from each account session independently', () => {
+    let firstUptime = 1_999;
+    const first = makeRef({ getUptimeMs: () => firstUptime });
+    const second = makeRef({ getUptimeMs: () => 0 });
+    expect(first.api.getUptimeMs()).toBe(1_999);
+    expect(second.api.getUptimeMs()).toBe(0);
+    firstUptime = 3_001;
+    expect(first.api.getUptimeMs()).toBe(3_001);
+    expect(makeRef({ getUptimeMs: () => 0 }).api.getUptimeMs()).toBe(0);
+  });
+
   it('reports the account as online and able to send image or record', () => {
     const { api } = makeRef();
     expect(api.isOnline()).toBe(true);
@@ -716,6 +730,7 @@ describe('buildApiContext contact reads', () => {
       group_create_time: 100,
       group_level: 2,
       group_memo: 'rules',
+      group_description: '',
       group_all_shut: -1,
     }]);
     expect(fetchGroupList).not.toHaveBeenCalled();
@@ -744,6 +759,7 @@ describe('buildApiContext contact reads', () => {
       group_create_time: 0,
       group_level: 6,
       group_memo: '',
+      group_description: '',
       group_all_shut: 0,
     });
   });
@@ -797,6 +813,7 @@ describe('buildApiContext contact reads', () => {
             uin: 20002,
             uid: 'u_20002',
             nickname: 'stranger',
+            qid: 'qid_20002',
             remark: 'r',
             sex: 'female',
             age: 21,
@@ -809,12 +826,15 @@ describe('buildApiContext contact reads', () => {
 
     await expect(api.getStrangerInfo(20002)).resolves.toEqual({
       user_id: 20002,
+      uid: 'u_20002',
+      qid: 'qid_20002',
       nickname: 'stranger',
       remark: 'r',
       sex: 'female',
       age: 21,
       long_nick: 'hello sign',
       qq_level: 17,
+      qqLevel: 17,
       level: 17,
       status: 0,
       extStatus: 0,
