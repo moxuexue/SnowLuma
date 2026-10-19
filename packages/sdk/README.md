@@ -62,6 +62,8 @@ const bot = new SnowLumaHttpClient({
 
 await bot.sendPrivateMessage(10001, text('pong'));
 
+const { url } = await bot.getGroupShareLink(123456);
+
 await bot.sendGroupMessage(123456, [
   message.text('Hello'),
   message.at('all'),
@@ -142,6 +144,28 @@ const response = await bot.rawResponse('get_status');
 
 `raw` 会在 SnowLuma 返回 `status: "failed"` 或非零 `retcode` 时抛出 `SnowLumaApiError`；`rawResponse` 会保留完整响应。
 
+### 读取空间说说评论
+
+`get_qzone_msg_detail` 是只读扩展动作，`raw` 提供参数和结果类型：
+
+```ts
+const detail = await bot.raw('get_qzone_msg_detail', {
+  tid: '说说 ID', // 来自 get_qzone_msg_list / send_qzone_msg
+  // target_uin: 10001, // 省略时读取机器人自己的空间
+  pos: 0,
+  num: 20,
+});
+
+for (const comment of detail.comments) {
+  console.log(comment.comment_id, comment.uin, comment.name, comment.time, comment.content);
+  console.log(comment.replies); // 服务端内联返回的二级回复
+}
+```
+
+`comment_num` 是服务端报告的总数，`comments` 是本页一级评论；`num` 范围为 1–100，实际返回数量可能更少。二级回复不单独分页，`replies` 不保证完整。评论 ID 在所属说说内唯一，二级回复 ID 在父评论内唯一；时间均为 Unix 秒，正文保留空间表情和 @ 标记。该接口复用当前账号的空间登录态，登录或访问权限失败会抛出 `SnowLumaApiError`。
+
+分页参数及 `commentlist` / `list_3` 字段参考 [Qzone-API](https://github.com/SmartHypercube/Qzone-API/blob/master/qzone.py)。实际分页和可见内容取决于 QQ 空间服务端。
+
 ## Message Builder
 
 ```ts
@@ -162,6 +186,8 @@ const chainedCq = toCQString(chained);
 const parsed = fromCQString('hi[CQ:at,qq=all]');
 ```
 
+CQ 转换会保留参数中的字面量转义文本，例如图片路径中的 `&#44;`，不会将它再次解码成逗号。
+
 链式入口返回 `MessageChain`，可以直接传给发送接口，也可以用 `build()` / `toSegments()` 转成 OneBot segment 数组：
 
 ```ts
@@ -176,9 +202,39 @@ await text('hi').atAll().br().face(14).sendToGroup(bot, 123456);
 
 已内置常用段：`text`、`br`、`face`、`at`、`atAll`、`reply`、`image`、`record`、`video`、`json`、`xml`、`poke`、`forward`、`node`、`share`、`music`、`location`、`contact` 和 `raw`。
 
+### 合并转发中的自定义引用
+
+合并转发节点的 `content` 支持 `reply.data.message`，无需引用目标已存在于本地消息库。
+SDK 提供 `message.customReply()`（返回消息段，仅用于转发节点）：
+
+```ts
+await bot.raw('send_group_forward_msg', {
+  group_id: 123456,
+  messages: [message.node(10001, '发送者', [
+    message.customReply([message.text('SnowLuma')], { qq: 10002, time: 1700000000, seq: 42 }),
+    message.text('这是回复内容'),
+  ])],
+});
+```
+
+对应的 OneBot JSON 为 `{ "type": "reply", "data": { "message": [{ "type": "text", "data": { "text": "SnowLuma" } }] } }`。
+`message` 可以是文本/CQ 字符串、单个消息段或消息段数组，不能为空；显式提供时优先于 `id`。
+引用预览保留文字和 @，图片、表情、语音、视频、文件、转发、JSON/XML 卡片和 Markdown 使用类型文字摘要，不会为引用重新上传媒体。
+引用内容不支持嵌套 `reply`/`node` 或 `music`、`contact`、`poke` 等其他类型；无效内容会返回参数错误。
+
+`qq`、`time`、`seq` 支持整数或整数字符串。省略时分别使用当前节点发送者、节点时间（未指定时为当前时间）和 `1`。
+`qq` 必须是正安全整数，`time` 是 0 到 4294967295 的 Unix 秒，`seq` 是 1 到 4294967295 的序号。
+这些字段用于引用预览；自定义引用不保证能在 QQ 中跳转到原消息。请使用 JSON 消息段传递此扩展；SDK 的 `toCQString` 会拒绝将嵌套消息段转换成 CQ 参数，避免内容被转成 `[object Object]`。
+
+`get_forward_msg` 的回复段仍含 `id`；当 QQ 返回内嵌引用内容时，还会包含 `message` 以及可用的 `qq`、`time`、`seq`。
+将返回节点的 `message` 作为新转发节点的 `content` 即可保留引用预览，无需再通过 `get_msg` 查询引用 ID。
+若 QQ 没有提供引用内容，则只返回原有 `id`。普通群聊/私聊的 `reply.data.id` 用法保持不变。
+
 ## 请求控制
 
 每次请求都支持覆盖 `echo`、超时和 `AbortSignal`：
+
+WebSocket 并发请求必须使用不同的 `echo`；重复值会被拒绝。省略时由 SDK 自动生成。
 
 ```ts
 const controller = new AbortController();

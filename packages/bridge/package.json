@@ -1,7 +1,7 @@
 {
   "license": "SEE LICENSE IN LICENSE",
   "name": "@snowluma/bridge",
-  "version": "1.14.22",
+  "version": "2.0.3",
   "private": true,
   "type": "module",
   "description": "SnowLuma bridge — QQ NT desktop client lifecycle: hook injection (via native addon), per-PID HookSession orchestration, pipe-watcher for process discovery, and the BridgeManagerSink interface that lets the hook layer call back into a UIN-keyed session router without depending on @snowluma/core. Consumed by the top-level app entry (which constructs the BridgeManager from @snowluma/core and injects it as the sink) and by the WebUI server (read-only HookProcessInfo views).",
@@ -40,9 +40,9 @@
       "types": "./src/qq-hook-client.ts",
       "default": "./src/qq-hook-client.ts"
     },
-    "./qq-port-probe": {
-      "types": "./src/qq-port-probe.ts",
-      "default": "./src/qq-port-probe.ts"
+    "./qq-account": {
+      "types": "./src/qq-account/index.ts",
+      "default": "./src/qq-account/index.ts"
     },
     "./types": {
       "types": "./src/types.ts",
@@ -54,12 +54,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@snowluma/common": "workspace:*"
+    "@snowluma/common": "workspace:*",
+    "@snowluma/sqlite": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "^4.1.4"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

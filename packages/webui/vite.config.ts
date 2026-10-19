@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
@@ -7,32 +6,24 @@ import tailwindcss from '@tailwindcss/vite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Single source of truth for the user-facing app version: monorepo root package.json.
-const rootPkg = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf-8'),
-) as { version: string };
-
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
+    plugins: [tailwindcss(), react()],
+    resolve: {
+        alias: {
+            '@': path.resolve(__dirname, 'src'),
+        },
     },
-  },
-  define: {
-    __APP_VERSION__: JSON.stringify(rootPkg.version),
-  },
-  server: {
-    port: 5178,
-    strictPort: false,
-    proxy: {
-      '/api': { target: 'http://localhost:5099', changeOrigin: true, ws: true },
-      '/avatar': { target: 'http://localhost:5099', changeOrigin: true },
+    server: {
+        port: 5178,
+        strictPort: false,
+        proxy: {
+            '/api': { target: 'http://localhost:5099', changeOrigin: true, ws: true },
+            '/avatar': { target: 'http://localhost:5099', changeOrigin: true },
+        },
     },
-  },
-  build: {
-    // Emit into the monorepo-root dist/client so the bundled core can serve it via Hono.
-    outDir: '../../dist/client',
-    emptyOutDir: true,
-  },
+    build: {
+        // Emit into the monorepo-root dist/client so the bundled core can serve it via Hono.
+        outDir: '../../dist/client',
+        emptyOutDir: true,
+    },
 });

@@ -1,7 +1,7 @@
 {
   "license": "SEE LICENSE IN LICENSE",
   "name": "@snowluma/core",
-  "version": "1.14.22",
+  "version": "2.0.3",
   "description": "SnowLuma core - NTQQ packet sniffer with Node.js native addon",
   "private": true,
   "type": "module",
@@ -34,7 +34,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "build:all": "cross-env BUILD_WEBUI=true vite build",
+    "build:all": "cross-env BUILD_WEBUI=true pnpm build",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,7 +48,9 @@
     "@snowluma/protocol": "workspace:*",
     "@snowluma/proton": "workspace:*",
     "@snowluma/websocket": "workspace:*",
-    "otpauth": "^9.5.1"
+    "fflate": "^0.8.3",
+    "otpauth": "^9.5.1",
+    "tar": "^7.5.22"
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.15",
@@ -60,6 +62,10 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-cp": "^6.0.3",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "@snowluma/sqlite": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

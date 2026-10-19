@@ -1,62 +1,42 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import type { AccountConnections, HookProcessInfo, QQInfo, SystemInfo, UpdateInfo } from '@/types';
+import type { UpdateInfo } from '@/types';
+import type { AppResourceData, AppResources } from '@/lib/app-resources';
 import type { HookProcessOps } from '@/hooks/use-hook-process-ops';
 
-export interface ResourceLoadState {
-  ready: boolean;
-  error: string | null;
-}
-
-export interface AppResourceState {
-  qqList: ResourceLoadState;
-  processList: ResourceLoadState;
-  systemInfo: ResourceLoadState;
-  connections: ResourceLoadState;
-  updateInfo: ResourceLoadState;
-}
-
-/**
- * Live mutable state owned by AppLayout and shared with the child route
- * components rendered inside its `<Outlet />`. Pages used to receive these
- * via prop drilling — now they pull from context so adding a new page does
- * not touch AppLayout.
- */
-export interface AppStateValue {
-  qqList: QQInfo[];
-  processList: HookProcessInfo[];
-  systemInfo: SystemInfo | null;
-  connections: AccountConnections[];
-  /** Advisory update-availability info; null until the first check resolves. */
-  updateInfo: UpdateInfo | null;
-  /** Distinguishes an empty result from an unresolved or failed initial read. */
-  resources: AppResourceState;
-  selectedUin: string | null;
-  setSelectedUin: (uin: string | null) => void;
-  processOps: HookProcessOps;
-  refreshQqList: () => void;
-  refreshProcesses: () => void;
-  refreshSystem: () => void;
-  refreshConnections: () => void;
-  /** Re-run the update check; `force` bypasses the server-side cache. */
-  refreshUpdate: (force?: boolean) => Promise<UpdateInfo | null>;
-  /** Triggered from the topbar logout button. */
-  onLogout: () => void;
+export interface AppStateValue extends AppResourceData {
+    /** Distinguishes an empty result from an unresolved or failed initial read. */
+    resources: AppResources;
+    selectedUin: string | null;
+    setSelectedUin: (uin: string | null) => void;
+    processOps: HookProcessOps;
+    refreshQqList: () => void;
+    refreshProcesses: () => void;
+    refreshSystem: () => void;
+    refreshConnections: () => void;
+    /** Re-run the update check; `force` bypasses the server-side cache. */
+    refreshUpdate: (force?: boolean) => Promise<UpdateInfo | null>;
+    /** Triggered from the topbar logout button. */
+    onLogout: () => void;
 }
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({
-  value,
-  children,
+    value,
+    children,
 }: {
-  value: AppStateValue;
-  children: ReactNode;
+    value: AppStateValue;
+    children: ReactNode;
 }) {
-  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+    return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 
 export function useAppState(): AppStateValue {
-  const v = useContext(AppStateContext);
-  if (!v) throw new Error('useAppState must be used inside <AppStateProvider>');
-  return v;
+    const v = useContext(AppStateContext);
+
+    if (!v) {
+        throw new Error('useAppState must be used inside <AppStateProvider>');
+    }
+
+    return v;
 }

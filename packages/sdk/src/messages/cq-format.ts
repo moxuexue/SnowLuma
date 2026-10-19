@@ -1,29 +1,34 @@
-import type { KnownMessageSegment, MessageSegment } from '../types/index';
+import type { AnyMessageSegment } from '../types/index';
 
 export function escapeCqText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/\[/g, '&#91;')
-    .replace(/\]/g, '&#93;');
+    return text.replaceAll('&', '&amp;').replaceAll('[', '&#91;').replaceAll(']', '&#93;');
 }
 
 export function escapeCqParam(text: string): string {
-  return escapeCqText(text).replace(/,/g, '&#44;');
+    return escapeCqText(text).replaceAll(',', '&#44;');
 }
 
-export function segmentsToCQString(segments: Array<KnownMessageSegment | MessageSegment>): string {
-  return segments.map(segmentToCq).join('');
+export function segmentsToCQString(segments: AnyMessageSegment[]): string {
+    return segments.map(segmentToCq).join('');
 }
 
-function segmentToCq(segment: KnownMessageSegment | MessageSegment): string {
-  if (segment.type === 'text') {
-    return escapeCqText(String(segment.data.text ?? ''));
-  }
+function segmentToCq(segment: AnyMessageSegment): string {
+    if (segment.type === 'text') {
+        return escapeCqText(String(segment.data.text ?? ''));
+    }
 
-  const params = Object.entries(segment.data)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .map(([key, value]) => `${key}=${escapeCqParam(String(value))}`)
-    .join(',');
+    if (
+        segment.type === 'reply' &&
+        segment.data.message !== undefined &&
+        typeof segment.data.message !== 'string'
+    ) {
+        throw new TypeError('reply.message containing message segments must be sent as JSON');
+    }
 
-  return params ? `[CQ:${segment.type},${params}]` : `[CQ:${segment.type}]`;
+    const params = Object.entries(segment.data)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => `${key}=${escapeCqParam(String(value))}`)
+        .join(',');
+
+    return params ? `[CQ:${segment.type},${params}]` : `[CQ:${segment.type}]`;
 }

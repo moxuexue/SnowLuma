@@ -16,10 +16,11 @@ This is a pnpm workspace. Package ownership matters more than directory names:
 | Location | Responsibility |
 | --- | --- |
 | `packages/core` | Application entry, per-account Bridge orchestration, WebUI backend, notifications, release assembly |
-| `packages/bridge` | QQ process discovery, Hook sessions, native transport lifecycle |
+| `packages/bridge` | QQ process discovery, local account/login detection, Hook sessions, native transport lifecycle |
 | `packages/protocol` | Packet decoding, typed QQ events, identity resolution, protocol requests and media transfers |
 | `packages/onebot` | Action validation and dispatch, event conversion, message storage, HTTP/WebSocket adapters |
 | `packages/common` | Shared logging, configuration and utilities without business dependencies |
+| `packages/sqlite` | Asynchronous SQLite facade, native loader, prebuild selection and Vite release assets |
 | `packages/proto-defs` | Typed protocol schemas |
 | `packages/proton` | Compile-time protobuf codecs and build integration |
 | `packages/websocket` | WebSocket implementation and native binding integration |
@@ -32,11 +33,17 @@ This is a pnpm workspace. Package ownership matters more than directory names:
 
 `packages/bridge` owns process connectivity; the account-level Bridge lives in `packages/core/src/bridge`. Start at [the application entry](packages/core/src/index.ts) to follow their composition.
 
+[The entry point](packages/core/src/index.ts) applies pending updates before starting runtime services. [The updater](packages/core/src/update) owns staging and replacement; [Core's build configuration](packages/core/vite.config.ts) emits the release manifest from its build outputs and runtime assets. Keep Core in one bundle and native libraries lazy-loaded so startup can recover an interrupted update before opening native files.
+
+Application versions come from the root `package.json` through `@snowluma/common/version`. Use `pnpm bump <version>` to update workspace manifests, or `pnpm bump` to sync them after editing the root version.
+Use `@snowluma/common/semver` for application version validation and comparison. Versions must be canonical SemVer; strip GitHub's `v` tag prefix only at the API boundary.
+
 Read the relevant owner before changing a path:
 
 | Change | Start here |
 | --- | --- |
 | Connection or account lifecycle | [Hook manager](packages/bridge/src/hook-manager.ts), [Bridge manager](packages/core/src/bridge/manager.ts), [OneBot instance](packages/onebot/src/instance.ts) |
+| Which account a QQ process is signed in as | [Account detection](packages/bridge/src/qq-account/detect.ts), [login.db reader](packages/bridge/src/qq-account/login-db.ts), [QQ data paths](packages/bridge/src/qq-account/paths.ts) |
 | Incoming QQ events or identity | [Packet pipeline](packages/protocol/src/packet-pipeline.ts), [message decoders](packages/protocol/src/msg-push/index.ts), [identity service](packages/protocol/src/identity-service.ts) |
 | OneBot actions or message segments | [Action definitions](packages/onebot/src/actions/index.ts), [validation helpers](packages/onebot/src/action-kit.ts), [event conversion](packages/onebot/src/event-converter/index.ts) |
 | WebUI | [Interaction conventions](packages/webui/README.md), `packages/webui/src`, `packages/core/src/webui` |
@@ -59,6 +66,8 @@ pnpm --filter @snowluma/onebot test   # example: tests for the affected package
 pnpm --filter webui test             # the frontend package has no @snowluma/ prefix
 ```
 
+TypeScript formatting uses the root [Prettier configuration](.prettierrc.json), [local ESLint formatting rules](eslint.format.config.ts), and [ignore list](.prettierignore). Use `pnpm format` for all TS/TSX/MTS/CTS files and `pnpm format:check` for a read-only check. For selected files, run `pnpm exec eslint --config eslint.format.config.ts --fix <paths>` followed by `pnpm exec prettier --write <paths>`. These commands enforce four-space indentation, braces around control-statement bodies, and blank lines around statement blocks while preserving other logical spacing. They are separate from CI and its code-quality lint rules. Generated catalogs and compiler fixtures retain their source formatting.
+
 Use focused tests while iterating. Before handing off a code change, run the full checks required by CONTRIBUTING.md and report anything that could not run. [PR CI](.github/workflows/ci.yml) is the reference; `pnpm run ci` reproduces its commands locally, including dependency installation and the generated-catalog check.
 
 - **Documentation-only changes:** verify links, paths, commands and `git diff --check`; runtime tests do not validate prose.
@@ -79,7 +88,7 @@ Use focused tests while iterating. Before handing off a code change, run the ful
 - **Validate at inputs.** Use the existing action field and cross-field validation helpers. Preserve accepted input forms, response fields and error behavior unless the change explicitly calls for new semantics. Do not silently discard invalid outbound message content.
 - **Protect persisted data.** Message history and media metadata are durable records. Do not add automatic deletion or treat them as disposable caches. Migration changes need failure and restart coverage; keep failures visible.
 - **Preserve transport policy.** Retain configured bind addresses and access checks. TLS startup failure must not silently downgrade to HTTP. Distinguish saved configuration from changes actually applied to a running adapter.
-- **Keep types and ownership clear.** Follow the strict TypeScript configuration, existing import style and two-space indentation. Validate unknown external data instead of hiding mismatches with casts or fallback values. Keep comments about reasons and non-obvious behavior.
+- **Keep types and ownership clear.** Follow the strict TypeScript configuration, existing import style and four-space TypeScript indentation. Validate unknown external data instead of hiding mismatches with casts or fallback values. Keep comments about reasons and non-obvious behavior.
 - **Keep diagnostics safe.** Use existing sanitization when recording external input. Credentials, private keys, private account data and unredacted captures do not belong in commits, fixtures or public reports.
 
 ## Generated files and related changes

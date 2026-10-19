@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
-  <a href="./docs/onebot-actions.md">动作参考</a> ·
+  <a href="https://snowluma.github.io/zh/docs/api">动作参考</a> ·
   <a href="https://github.com/SnowLuma/SnowLuma/issues">问题反馈</a>
 </p>
 
@@ -43,7 +43,7 @@ SnowLuma 是面向 QQ 客户端的 TypeScript 互操作运行时，将 QQ 原生
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载对应平台的完整发行包并解压。Lite 版需 Node.js 22.13+（23 系需 23.4+）。
+1. 从 [Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载对应平台的完整发行包并解压。Lite 版需 Node.js 24+。
 2. Windows 运行 `launcher.bat`；Linux 执行：
 
    ```bash
@@ -53,11 +53,14 @@ SnowLuma 是面向 QQ 客户端的 TypeScript 互操作运行时，将 QQ 原生
 
 3. 打开 [`http://localhost:5099`](http://localhost:5099)，使用启动日志中的初始密码登录 WebUI，按引导接入 QQ 进程并配置 OneBot 连接。
 
+账号识别由登录数据库的文件变化、进程和登录事件或手动操作触发，不做周期探测。未载入的 QQ 进程也不会持续调用 Windows Restart Manager；需要重查时可点击 WebUI 进程行的刷新/重连。
+
 ## 接入与文档
 
 | 入口 | 文档 |
 | --- | --- |
-| WebSocket / HTTP | [OneBot 动作参考](docs/onebot-actions.md) |
+| WebSocket / HTTP | [OneBot 动作参考](https://snowluma.github.io/zh/docs/api) |
+| 部署（Docker / Windows） | [部署指南](https://snowluma.github.io/zh/docs/guide/deploy) |
 | TypeScript SDK | [`packages/sdk/README.md`](packages/sdk/README.md) |
 | MCP | [`packages/mcp/README.md`](packages/mcp/README.md) |
 
@@ -65,7 +68,7 @@ JSON 消息段接受标准的 `data.data` 字符串，也兼容 `data.data` 非�
 
 ## 开发
 
-需要 Node.js 22.13+（23 系需 23.4+）与 pnpm 10.28.0，日常开发基于 `dev` 分支：
+需要 Node.js 24+ 与 pnpm 11.25.0，日常开发基于 `dev` 分支：
 
 ```bash
 git clone https://github.com/SnowLuma/SnowLuma.git
@@ -77,10 +80,6 @@ pnpm test
 ```
 
 贡献流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；模块边界与项目词汇见 [`CONTEXT.md`](CONTEXT.md)；开发方向见 [`RoadMap.md`](RoadMap.md)。
-
-## 引用消息预览
-
-OneBot 发送 `reply` 段时，会将本地消息缓存中的原文附入 QQ 引用预览，保留文字、换行与引用关系。图片、语音等非文字段以类型提示显示，不重新上传媒体；原消息中的嵌套引用不递归展开。只有消息元数据而没有缓存正文时，不生成虚构的预览内容。
 
 ## 使用边界与许可
 

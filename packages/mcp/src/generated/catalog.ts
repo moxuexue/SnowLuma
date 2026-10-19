@@ -3776,7 +3776,7 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_forward_msg",
     "aliases": [],
     "summary": "获取合并转发消息（id 或 message_id）",
-    "returns": "{ messages }：转发内的消息节点数组（每项为 OneBot 消息事件，内部字段不固定）。",
+    "returns": "{ messages }：转发内的消息节点数组（每项为 OneBot 消息事件）；reply 保留 id，有内嵌引用内容时附带 message 和可用的 qq/time/seq，可作为转发节点 content 再次发送。",
     "returnsSchema": {
       "type": "object",
       "properties": {
@@ -5985,6 +5985,104 @@ export const ACTIONS: CatalogAction[] = [
     "category": "群文件"
   },
   {
+    "name": "get_group_share_link",
+    "aliases": [],
+    "summary": "获取群分享链接",
+    "returns": "用于分享或邀请加群的链接，可作为群二维码内容。",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "加群分享链接"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "readOnly": true,
+    "params": [
+      {
+        "name": "group_id",
+        "type": "uint",
+        "required": true,
+        "role": "group_id",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "desc": "群号"
+      },
+      {
+        "name": "need_short_url",
+        "type": "bool",
+        "required": false,
+        "schema": {
+          "type": "boolean"
+        },
+        "default": true,
+        "desc": "是否获取短链接"
+      },
+      {
+        "name": "src_id",
+        "type": "int",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "default": 73,
+        "desc": "来源标识（兼容参数）"
+      },
+      {
+        "name": "additional_param",
+        "type": "string",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "default": "",
+        "desc": "附加参数"
+      }
+    ],
+    "invariants": [],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "group_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "群号",
+          "x-role": "group_id"
+        },
+        "need_short_url": {
+          "type": "boolean",
+          "description": "是否获取短链接",
+          "default": true
+        },
+        "src_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "来源标识（兼容参数）",
+          "default": 73
+        },
+        "additional_param": {
+          "type": "string",
+          "description": "附加参数",
+          "default": ""
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "additionalProperties": true
+    },
+    "category": "群信息"
+  },
+  {
     "name": "get_group_shut_list",
     "aliases": [],
     "summary": "获取群禁言列表",
@@ -6486,7 +6584,7 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_msg",
     "aliases": [],
     "summary": "获取消息",
-    "returns": "消息事件对象（首次收到时存储的副本，已去除 post_type/self_id、附带 real_id 字段并刷新图片 URL）。",
+    "returns": "消息事件对象（去除 post_type/self_id，附带 real_id）；逐个尝试刷新图片、语音和视频 URL，成功使用新地址，失败保留该段原地址并继续返回消息；地址更新时同步 raw_message。",
     "readOnly": true,
     "params": [
       {
@@ -7410,6 +7508,190 @@ export const ACTIONS: CatalogAction[] = [
     "category": "空间"
   },
   {
+    "name": "get_qzone_msg_detail",
+    "aliases": [],
+    "summary": "获取 QQ 空间说说详情与一页评论（含服务端内联回复，需有访问权限）",
+    "returns": "说说详情、服务端报告的评论总数与本页评论；replies 仅含服务端内联返回的二级回复，不保证完整。",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "tid": {
+          "type": "string",
+          "description": "说说 ID"
+        },
+        "content": {
+          "type": "string",
+          "description": "说说正文"
+        },
+        "comment_num": {
+          "type": "integer",
+          "description": "服务端报告的评论总数（非本页数量）"
+        },
+        "comments": {
+          "type": "array",
+          "description": "本页一级评论，数量可能少于 num",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uin": {
+                "type": "integer",
+                "description": "评论者 QQ 号"
+              },
+              "name": {
+                "type": "string",
+                "description": "评论者昵称"
+              },
+              "time": {
+                "type": "integer",
+                "description": "评论时间（unix 秒）"
+              },
+              "content": {
+                "type": "string",
+                "description": "评论正文，保留空间表情和 @ 标记"
+              },
+              "comment_id": {
+                "type": "string",
+                "description": "评论 ID，在所属说说或父评论内唯一"
+              },
+              "replies": {
+                "type": "array",
+                "description": "服务端内联二级回复，可能不完整",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "uin": {
+                      "type": "integer",
+                      "description": "评论者 QQ 号"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "评论者昵称"
+                    },
+                    "time": {
+                      "type": "integer",
+                      "description": "评论时间（unix 秒）"
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "评论正文，保留空间表情和 @ 标记"
+                    },
+                    "comment_id": {
+                      "type": "string",
+                      "description": "评论 ID，在所属说说或父评论内唯一"
+                    }
+                  },
+                  "required": [
+                    "uin",
+                    "name",
+                    "time",
+                    "content",
+                    "comment_id"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "uin",
+              "name",
+              "time",
+              "content",
+              "comment_id",
+              "replies"
+            ]
+          }
+        }
+      },
+      "required": [
+        "tid",
+        "content",
+        "comment_num",
+        "comments"
+      ]
+    },
+    "readOnly": true,
+    "params": [
+      {
+        "name": "tid",
+        "type": "string",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "desc": "说说 tid（来自 get_qzone_msg_list / send_qzone_msg）"
+      },
+      {
+        "name": "target_uin",
+        "type": "uint",
+        "required": false,
+        "role": "user_id",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "desc": "说说所属 QQ 号，省略则取机器人自己"
+      },
+      {
+        "name": "pos",
+        "type": "int",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "desc": "一级评论起始偏移",
+        "default": 0
+      },
+      {
+        "name": "num",
+        "type": "int",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "desc": "请求的一级评论数量，实际数量受服务端限制",
+        "default": 20
+      }
+    ],
+    "invariants": [],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "说说 tid（来自 get_qzone_msg_list / send_qzone_msg）"
+        },
+        "target_uin": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "说说所属 QQ 号，省略则取机器人自己",
+          "x-role": "user_id"
+        },
+        "pos": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "一级评论起始偏移",
+          "default": 0
+        },
+        "num": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "请求的一级评论数量，实际数量受服务端限制",
+          "default": 20
+        }
+      },
+      "required": [
+        "tid"
+      ],
+      "additionalProperties": true
+    },
+    "category": "空间"
+  },
+  {
     "name": "get_qzone_msg_list",
     "aliases": [],
     "summary": "获取 QQ 空间说说列表（默认机器人自己的空间）",
@@ -7576,6 +7858,7 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_record",
     "aliases": [],
     "summary": "获取语音信息；传 out_format 则服务端转码并附带 base64",
+    "returns": "语音信息（file/url 为向 QQ 获取的当前下载地址）；资源元数据缺失或远端获取失败时返回错误。out_format 指定时附带转码后的 base64。",
     "readOnly": true,
     "params": [
       {
@@ -9195,7 +9478,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message",
@@ -9203,7 +9487,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message_type",
@@ -9267,10 +9552,10 @@ export const ACTIONS: CatalogAction[] = [
       "type": "object",
       "properties": {
         "messages": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message_type": {
           "type": "string"
@@ -9441,7 +9726,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message",
@@ -9449,7 +9735,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "source",
@@ -9493,10 +9780,10 @@ export const ACTIONS: CatalogAction[] = [
           "x-role": "group_id"
         },
         "messages": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "source": {
           "type": "string"
@@ -9844,7 +10131,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message",
@@ -9852,7 +10140,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "source",
@@ -9895,10 +10184,10 @@ export const ACTIONS: CatalogAction[] = [
           "x-role": "user_id"
         },
         "messages": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "source": {
           "type": "string"
@@ -12848,7 +13137,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message",
@@ -12856,7 +13146,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "group_id",
@@ -12874,10 +13165,10 @@ export const ACTIONS: CatalogAction[] = [
       "type": "object",
       "properties": {
         "messages": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "group_id": {
           "type": "integer",
@@ -12901,7 +13192,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "message",
@@ -12909,7 +13201,8 @@ export const ACTIONS: CatalogAction[] = [
         "required": false,
         "schema": {
           "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
-        }
+        },
+        "desc": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
       },
       {
         "name": "group_id",
@@ -12927,10 +13220,10 @@ export const ACTIONS: CatalogAction[] = [
       "type": "object",
       "properties": {
         "messages": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "message": {
-          "description": "OneBot message: string | segment[] | object. In segment arrays, text segments whose text field is exactly \"\" are compatibility placeholders and do not count as sendable segments; missing, null, and whitespace-only text remain subject to normal validation."
+          "description": "转发节点数组；节点 content 内的 reply.data.message 可提供自定义引用内容（字符串或消息段），qq/time/seq 可选；仅用于转发内引用预览。"
         },
         "group_id": {
           "type": "integer",
@@ -13319,7 +13612,7 @@ export const CATEGORIES: CatalogCategory[] = [
   },
   {
     "category": "群信息",
-    "count": 6
+    "count": 7
   },
   {
     "category": "群管理",
@@ -13343,7 +13636,7 @@ export const CATEGORIES: CatalogCategory[] = [
   },
   {
     "category": "空间",
-    "count": 9
+    "count": 10
   },
   {
     "category": "系统表情",
