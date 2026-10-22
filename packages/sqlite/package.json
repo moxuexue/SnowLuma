@@ -1,7 +1,7 @@
 {
   "license": "SEE LICENSE IN LICENSE",
   "name": "@snowluma/sqlite",
-  "version": "2.0.3",
+  "version": "2.1.1",
   "private": true,
   "type": "module",
   "description": "SnowLuma asynchronous SQLite facade, native loader and release assets.",
@@ -28,9 +28,9 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "^4.1.4"
+    "vitest": "4.1.11"
   },
   "engines": {
-    "node": ">=24"
+    "node": "^24.22.1 || >=26.12.1"
   }
 }
