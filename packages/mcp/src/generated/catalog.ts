@@ -7,6 +7,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "_del_group_notice",
     "aliases": [],
     "summary": "删除群公告（fid 或 notice_id 二选一）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除群公告（fid 或 notice_id 二选一）",
+        "params": {
+          "group_id": 20001,
+          "notice_id": "<notice-id-from-_get_group_notice>"
+        },
+        "notes": "notice_id 来自 _get_group_notice；删除需要管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -66,6 +80,73 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "获取指定 QQ 号正在使用的个性装扮（挂件/名片/来电/输入状态等）",
     "returns": "装扮信息；目标未使用任何可查询装扮时 items 为空数组。网络失败、未登录态/风控、页面改版、返回账号与请求不一致时返回失败并附具体原因",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "target_uin": {
+          "type": "string"
+        },
+        "is_svip": {
+          "type": "boolean"
+        },
+        "avatar_url": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "app_id": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "item_id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "preview_url": {
+                "type": "string"
+              },
+              "video_url": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "app_id",
+              "kind",
+              "item_id",
+              "name",
+              "preview_url",
+              "video_url",
+              "price"
+            ]
+          }
+        }
+      },
+      "required": [
+        "target_uin",
+        "is_svip",
+        "avatar_url",
+        "items"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取指定 QQ 号正在使用的个性装扮（挂件/名片/来电/输入状态等）",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "替换为需要查询的 QQ 号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -103,6 +184,124 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "获取群公告",
     "returns": "普通公告与新成员公告的合并数组；send_to_new_members 标识后者；图片含 id、url、宽高",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "notice_id": {
+            "type": "string"
+          },
+          "sender_id": {
+            "type": "number"
+          },
+          "publish_time": {
+            "type": "number"
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "image": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "height": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "height",
+                    "width"
+                  ]
+                }
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "height": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "height",
+                    "width"
+                  ]
+                },
+                "description": "与 image 相同的图片列表，保留两个兼容字段"
+              }
+            },
+            "required": [
+              "text",
+              "image",
+              "images"
+            ]
+          },
+          "settings": {
+            "description": "服务端公告设置，原样透传，可为 null"
+          },
+          "read_num": {
+            "type": "number"
+          },
+          "type": {
+            "type": "number"
+          },
+          "pinned": {
+            "type": "number"
+          },
+          "send_to_new_members": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "notice_id",
+          "sender_id",
+          "publish_time",
+          "message",
+          "settings",
+          "read_num",
+          "type",
+          "pinned",
+          "send_to_new_members"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取群公告",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -168,6 +367,15 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取机型展示（兼容 mock）",
+        "params": {
+          "model": "示例机型"
+        },
+        "notes": "兼容占位接口，仅将传入的 model（或默认值）放进展示结构，不查询设备机型。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -197,6 +405,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "_mark_all_as_read",
     "aliases": [],
     "summary": "标记全部已读",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "标记全部已读",
+        "params": {},
+        "notes": "会将当前账号的会话标记为已读。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -211,6 +430,22 @@ export const ACTIONS: CatalogAction[] = [
     "name": "_send_group_notice",
     "aliases": [],
     "summary": "发送群公告（支持置顶、弹窗、新成员、群昵称引导与确认）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "发送群公告（支持置顶、弹窗、新成员、群昵称引导与确认）",
+        "params": {
+          "group_id": 20001,
+          "content": "欢迎参加本周讨论",
+          "type": 1,
+          "pinned": 0
+        },
+        "notes": "需要群公告管理权限；普通公告 type=1，新成员公告 type=20。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -385,6 +620,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "_set_model_show",
     "aliases": [],
     "summary": "设置机型展示（占位）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置机型展示（占位）",
+        "params": {},
+        "notes": "兼容占位接口，当前返回成功但不修改机型展示。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -399,6 +645,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": ".get_word_slices",
     "aliases": [],
     "summary": "分词（未实现）",
+    "returnsSchema": {
+      "not": {},
+      "description": "当前始终返回失败，没有成功 data；失败响应 data 为 null，原因见 wording"
+    },
+    "examples": [
+      {
+        "summary": "分词（未实现）",
+        "params": {},
+        "notes": "当前未实现，调用返回失败；不要将其当作可用能力。"
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -413,6 +670,26 @@ export const ACTIONS: CatalogAction[] = [
     "name": "add_custom_face",
     "aliases": [],
     "summary": "添加收藏表情",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "emoji_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "emoji_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "添加收藏表情",
+        "params": {
+          "file": "file:///path/to/emoji.png"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -447,6 +724,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "add_group_tag",
     "aliases": [],
     "summary": "向某个群分类添加资料标签",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "向某个群分类添加资料标签",
+        "params": {
+          "group_class": 1,
+          "name": "学习"
+        },
+        "notes": "替换实际群分类和标签；需要当前账号有管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -495,6 +786,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "bot_exit",
     "aliases": [],
     "summary": "退出机器人",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "退出机器人",
+        "params": {},
+        "notes": "会退出 SnowLuma 进程，仅在明确需要停止服务时调用。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -521,6 +823,12 @@ export const ACTIONS: CatalogAction[] = [
         "yes"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -547,6 +855,12 @@ export const ACTIONS: CatalogAction[] = [
         "yes"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -560,6 +874,34 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "cancel_group_album_media_like",
     "aliases": [],
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "batch_id": "1700000000"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。 batch_id 必须是实际批次的十进制字符串。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -635,6 +977,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "cancel_group_todo",
     "aliases": [],
     "summary": "取消群待办",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "取消群待办",
+        "params": {
+          "group_id": 20001,
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。 必须是该群的消息。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -704,6 +1060,13 @@ export const ACTIONS: CatalogAction[] = [
         "level"
       ]
     },
+    "examples": [
+      {
+        "summary": "检查链接安全性",
+        "params": {},
+        "notes": "兼容占位接口，当前固定返回 level=1，不能用来证明某个链接安全。"
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -718,6 +1081,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "clean_cache",
     "aliases": [],
     "summary": "清理缓存",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "清理缓存",
+        "params": {},
+        "notes": "兼容占位接口，当前返回成功但不执行清理。流式临时文件清理请使用 clean_stream_temp_file。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -733,6 +1107,36 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "清理流式传输临时文件(仅清理 stream 上传/下载目录)",
     "returns": "{ message, removed }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "const": "success"
+        },
+        "removed": {
+          "type": "integer"
+        },
+        "freed_bytes": {
+          "type": "integer"
+        },
+        "skipped_active": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "message",
+        "removed",
+        "freed_bytes",
+        "skipped_active"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "清理流式传输临时文件(仅清理 stream 上传/下载目录)",
+        "params": {},
+        "notes": "清理未使用的流式临时文件；不会清理正在传输的项目。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -747,6 +1151,51 @@ export const ACTIONS: CatalogAction[] = [
     "name": "click_inline_keyboard_button",
     "aliases": [],
     "summary": "点击内联键盘按钮",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "number",
+          "description": "按钮业务结果码，需单独检查"
+        },
+        "errMsg": {
+          "type": "string"
+        },
+        "status": {
+          "const": 0
+        },
+        "promptText": {
+          "type": "string"
+        },
+        "promptType": {
+          "const": 0
+        },
+        "promptIcon": {
+          "const": 0
+        }
+      },
+      "required": [
+        "result",
+        "errMsg",
+        "status",
+        "promptText",
+        "promptType",
+        "promptIcon"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "点击内联键盘按钮",
+        "params": {
+          "group_id": 20001,
+          "bot_appid": 10001,
+          "msg_seq": 42,
+          "button_id": "<button-id>",
+          "callback_data": "<callback-data>"
+        },
+        "notes": "参数必须来自同一条机器人按钮消息；msg_seq 是消息序号，不是 message_id。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -837,7 +1286,62 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "comment_qzone",
     "aliases": [],
-    "summary": "评论一条说说（QQ 空间，支持纯文字或带图；传 images 自动上传）",
+    "summary": "评论说说或回复指定评论（普通评论支持带图，楼中楼仅支持文字）",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "comment_id": {
+          "type": "string",
+          "description": "新评论或新回复的 ID；普通评论未返回 ID 时为空串，楼中楼回复不会用父编号代替"
+        },
+        "parent_comment_id": {
+          "type": "string",
+          "description": "仅楼中楼回复返回，所属一级评论 ID"
+        },
+        "parent_comment_uin": {
+          "type": "integer",
+          "description": "仅楼中楼回复返回，所属一级评论作者 QQ 号"
+        }
+      },
+      "required": [
+        "comment_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "评论一条说说（QQ 空间，支持纯文字或带图；传 images 自动上传）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>",
+          "target_uin": 10001,
+          "content": "感谢分享"
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。"
+      },
+      {
+        "summary": "回复指定一级评论，保留说说所属账号",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_detail>",
+          "target_uin": 10001,
+          "content": "感谢回复",
+          "comment_id": "0",
+          "comment_uin": 10002
+        },
+        "notes": "comment_id 和 comment_uin 分别取 get_qzone_msg_detail 的一级评论 comment_id 和 uin；编号 0 有效。楼中楼仅支持文字。"
+      },
+      {
+        "summary": "回复楼中楼中的某位评论者",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_detail>",
+          "target_uin": 10001,
+          "content": "我也这么认为",
+          "comment_id": "0",
+          "comment_uin": 10002,
+          "reply_uin": 10003,
+          "reply_name": "评论者"
+        },
+        "notes": "comment_id/comment_uin 使用该回复的 parent_comment_id/parent_comment_uin；reply_uin/reply_name 使用该回复的 uin/name，不把二级回复自身的 comment_id 当成父评论编号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -872,6 +1376,48 @@ export const ACTIONS: CatalogAction[] = [
         "desc": "说说所属 QQ 号，省略则为机器人自己"
       },
       {
+        "name": "comment_id",
+        "type": "string",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "desc": "一级父评论 ID，与 comment_uin 同时提供；编号 0 有效，不能传二级回复自身的 ID"
+      },
+      {
+        "name": "comment_uin",
+        "type": "uint",
+        "required": false,
+        "role": "user_id",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "desc": "一级父评论作者 QQ 号，与 comment_id 同时提供；不是说说所属账号"
+      },
+      {
+        "name": "reply_uin",
+        "type": "uint",
+        "required": false,
+        "role": "user_id",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "desc": "楼中楼中要回复的用户 QQ 号，与 reply_name 同时提供，需指定父评论"
+      },
+      {
+        "name": "reply_name",
+        "type": "string",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "desc": "要回复的用户昵称，来自评论详情的 name；与 reply_uin 同时提供"
+      },
+      {
         "name": "images",
         "type": "string[]",
         "required": false,
@@ -885,7 +1431,14 @@ export const ACTIONS: CatalogAction[] = [
         "desc": "图片数组（可选），支持 file:// http:// base64://；自动上传"
       }
     ],
-    "invariants": [],
+    "invariants": [
+      "all or none of: comment_id, comment_uin",
+      "all or none of: reply_uin, reply_name",
+      "reply_uin/reply_name require comment_id/comment_uin",
+      "images are not supported for comment replies",
+      "comment_id, reply_name and reply content must not be blank",
+      "comment_uin and reply_uin must be safe integers"
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -904,6 +1457,28 @@ export const ACTIONS: CatalogAction[] = [
           "minimum": 1,
           "description": "说说所属 QQ 号，省略则为机器人自己",
           "x-role": "user_id"
+        },
+        "comment_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "一级父评论 ID，与 comment_uin 同时提供；编号 0 有效，不能传二级回复自身的 ID"
+        },
+        "comment_uin": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "一级父评论作者 QQ 号，与 comment_id 同时提供；不是说说所属账号",
+          "x-role": "user_id"
+        },
+        "reply_uin": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "楼中楼中要回复的用户 QQ 号，与 reply_name 同时提供，需指定父评论",
+          "x-role": "user_id"
+        },
+        "reply_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "要回复的用户昵称，来自评论详情的 name；与 reply_uin 同时提供"
         },
         "images": {
           "type": "array",
@@ -926,6 +1501,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "complete_group_todo",
     "aliases": [],
     "summary": "完成群待办",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "完成群待办",
+        "params": {
+          "group_id": 20001,
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。 必须是该群的消息。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -982,6 +1571,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "create_collection",
     "aliases": [],
     "summary": "创建收藏（未实现）",
+    "returnsSchema": {
+      "not": {},
+      "description": "当前始终返回失败，没有成功 data；失败响应 data 为 null，原因见 wording"
+    },
+    "examples": [
+      {
+        "summary": "创建收藏（未实现）",
+        "params": {},
+        "notes": "当前未实现，调用返回失败；不要将其当作可用能力。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -996,6 +1596,37 @@ export const ACTIONS: CatalogAction[] = [
     "name": "create_flash_task",
     "aliases": [],
     "summary": "创建闪传任务",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "fileset_id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string",
+          "description": "与 fileset_id 相同的兼容字段"
+        }
+      },
+      "required": [
+        "fileset_id",
+        "task_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "创建闪传任务",
+        "params": {
+          "files": [
+            {
+              "file": "file:///path/to/report.pdf",
+              "name": "报告.pdf"
+            }
+          ],
+          "name": "资料包"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。 files 不能为空。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1045,6 +1676,84 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "创建群文件夹",
     "returns": "{ result: { retCode, retMsg }, groupItem: { folderInfo: { folderId, folderName, folderPath, createTime, modifyTime, createUin, modifyUin } } }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "object",
+          "properties": {
+            "retCode": {
+              "const": 0
+            },
+            "retMsg": {
+              "const": "success"
+            }
+          },
+          "required": [
+            "retCode",
+            "retMsg"
+          ]
+        },
+        "groupItem": {
+          "type": "object",
+          "properties": {
+            "folderInfo": {
+              "type": "object",
+              "properties": {
+                "folderId": {
+                  "type": "string"
+                },
+                "folderName": {
+                  "type": "string"
+                },
+                "folderPath": {
+                  "type": "string"
+                },
+                "createTime": {
+                  "type": "integer"
+                },
+                "modifyTime": {
+                  "type": "integer"
+                },
+                "createUin": {
+                  "type": "integer"
+                },
+                "modifyUin": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "folderId",
+                "folderName",
+                "folderPath",
+                "createTime",
+                "modifyTime",
+                "createUin",
+                "modifyUin"
+              ]
+            }
+          },
+          "required": [
+            "folderInfo"
+          ]
+        }
+      },
+      "required": [
+        "result",
+        "groupItem"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "创建群文件夹",
+        "params": {
+          "group_id": 20001,
+          "name": "共享资料",
+          "parent_id": "/"
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1108,6 +1817,28 @@ export const ACTIONS: CatalogAction[] = [
     "name": "del_group_album_media",
     "aliases": [],
     "summary": "删除群相册图片或视频",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "const": true
+        }
+      },
+      "required": [
+        "success"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "删除群相册图片或视频",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "lloc": "<media-lloc-or-video-id>"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1174,6 +1905,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_custom_face",
     "aliases": [],
     "summary": "删除收藏表情",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除收藏表情",
+        "params": {
+          "emoji_id": "<emoji-id-from-fetch_custom_face_detail>"
+        },
+        "notes": "emoji_id 来自 fetch_custom_face_detail。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1206,6 +1950,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_essence_msg",
     "aliases": [],
     "summary": "移除精华消息",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "移除精华消息",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1244,6 +2001,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_flash_file",
     "aliases": [],
     "summary": "删除闪传文件",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除闪传文件",
+        "params": {
+          "fileset_id": "<fileset-id>"
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1276,6 +2046,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_friend",
     "aliases": [],
     "summary": "删除好友",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除好友",
+        "params": {
+          "user_id": 10001,
+          "block": false
+        },
+        "notes": "会删除指定好友；仅在明确需要删除时调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1325,6 +2109,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_group_file",
     "aliases": [],
     "summary": "删除群文件",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除群文件",
+        "params": {
+          "group_id": 20001,
+          "file_id": "<file-id-from-get_group_root_files>"
+        },
+        "notes": "替换群文件列表中的实际 file_id；需要对应文件操作权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1377,6 +2175,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_group_file_folder",
     "aliases": [],
     "summary": "删除群文件夹",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除群文件夹",
+        "params": {
+          "group_id": 20001,
+          "folder_id": "<folder-id-from-get_group_root_files>"
+        },
+        "notes": "会删除指定群文件夹，确认资源后调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1427,6 +2239,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_group_folder",
     "aliases": [],
     "summary": "删除群文件夹",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除群文件夹",
+        "params": {
+          "group_id": 20001,
+          "folder_id": "<folder-id-from-get_group_root_files>"
+        },
+        "notes": "会删除指定群文件夹，确认资源后调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1477,6 +2303,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_group_tag",
     "aliases": [],
     "summary": "从某个群分类移除资料标签",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "从某个群分类移除资料标签",
+        "params": {
+          "group_class": 1,
+          "name": "学习"
+        },
+        "notes": "替换实际群分类和标签；需要当前账号有管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1525,6 +2365,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_msg",
     "aliases": [],
     "summary": "撤回消息",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "撤回消息",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1563,6 +2416,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "delete_qzone_msg",
     "aliases": [],
     "summary": "删除一条说说（QQ 空间，按 tid）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "删除一条说说（QQ 空间，按 tid）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>"
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1596,6 +2462,69 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "do_group_album_comment",
     "aliases": [],
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "user": {
+          "type": "object",
+          "properties": {
+            "uin": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "uin"
+          ]
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "integer"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "content"
+            ]
+          }
+        },
+        "time": {
+          "type": "string",
+          "description": "十进制时间字符串"
+        },
+        "clientKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "user",
+        "content",
+        "time",
+        "clientKey"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "lloc": "<media-lloc-or-video-id>",
+          "content": "拍得很好"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1675,6 +2604,28 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "下载文件（url 或 base64）到 data/downloads",
     "returns": "{ file }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "保存到 SnowLuma 服务端的本地文件路径"
+        }
+      },
+      "required": [
+        "file"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "下载文件（url 或 base64）到 data/downloads",
+        "params": {
+          "base64": "aGVsbG8=",
+          "name": "hello.txt"
+        },
+        "notes": "保存到 SnowLuma 服务端临时目录，返回服务端路径；不是 MCP 主机下载路径。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1738,6 +2689,118 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "以流式方式下载图片(缓存图片 id / URL / stream 目录本地文件)",
     "returns": "流式帧:file_info → file_chunk* → file_complete",
+    "returnsSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_info"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "file_size": {
+              "type": "integer",
+              "description": "字节数，0 可表示未知"
+            },
+            "chunk_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "file_size",
+            "chunk_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_chunk"
+            },
+            "index": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "string",
+              "description": "该分块的 Base64 数据"
+            },
+            "size": {
+              "type": "integer"
+            },
+            "progress": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "base64_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "index",
+            "data",
+            "size",
+            "progress",
+            "base64_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "response"
+            },
+            "data_type": {
+              "const": "file_complete"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "total_chunks": {
+              "type": "integer"
+            },
+            "total_bytes": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "total_chunks",
+            "total_bytes",
+            "message"
+          ]
+        }
+      ],
+      "description": "每个成功流式帧的 data；失败帧另由 status/retcode/wording 与 type=error 表示，不是 MCP 保存文件后的工具结果"
+    },
+    "examples": [
+      {
+        "summary": "以流式方式下载图片(缓存图片 id / URL / stream 目录本地文件)",
+        "params": {
+          "file_id": "<image-file-from-message>",
+          "chunk_size": 65536
+        },
+        "notes": "file_id 来自当前账号图片消息；经 invoke_action 调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1801,6 +2864,118 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "以流式方式下载语音(缓存语音 id / URL / stream 目录本地文件)",
     "returns": "流式帧:file_info → file_chunk* → file_complete",
+    "returnsSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_info"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "file_size": {
+              "type": "integer",
+              "description": "字节数，0 可表示未知"
+            },
+            "chunk_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "file_size",
+            "chunk_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_chunk"
+            },
+            "index": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "string",
+              "description": "该分块的 Base64 数据"
+            },
+            "size": {
+              "type": "integer"
+            },
+            "progress": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "base64_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "index",
+            "data",
+            "size",
+            "progress",
+            "base64_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "response"
+            },
+            "data_type": {
+              "const": "file_complete"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "total_chunks": {
+              "type": "integer"
+            },
+            "total_bytes": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "total_chunks",
+            "total_bytes",
+            "message"
+          ]
+        }
+      ],
+      "description": "每个成功流式帧的 data；失败帧另由 status/retcode/wording 与 type=error 表示，不是 MCP 保存文件后的工具结果"
+    },
+    "examples": [
+      {
+        "summary": "以流式方式下载语音(缓存语音 id / URL / stream 目录本地文件)",
+        "params": {
+          "file_id": "<record-file-from-message>",
+          "chunk_size": 65536
+        },
+        "notes": "file_id 来自当前账号语音消息；经 invoke_action 调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1864,6 +3039,118 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "以流式方式下载文件(stream 目录本地文件 / URL / 缓存媒体)",
     "returns": "流式帧:file_info → file_chunk* → file_complete",
+    "returnsSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_info"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "file_size": {
+              "type": "integer",
+              "description": "字节数，0 可表示未知"
+            },
+            "chunk_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "file_size",
+            "chunk_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "file_chunk"
+            },
+            "index": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "string",
+              "description": "该分块的 Base64 数据"
+            },
+            "size": {
+              "type": "integer"
+            },
+            "progress": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "base64_size": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "index",
+            "data",
+            "size",
+            "progress",
+            "base64_size"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "response"
+            },
+            "data_type": {
+              "const": "file_complete"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "total_chunks": {
+              "type": "integer"
+            },
+            "total_bytes": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "file_name",
+            "total_chunks",
+            "total_bytes",
+            "message"
+          ]
+        }
+      ],
+      "description": "每个成功流式帧的 data；失败帧另由 status/retcode/wording 与 type=error 表示，不是 MCP 保存文件后的工具结果"
+    },
+    "examples": [
+      {
+        "summary": "以流式方式下载文件(stream 目录本地文件 / URL / 缓存媒体)",
+        "params": {
+          "file": "https://example.com/report.pdf",
+          "chunk_size": 65536
+        },
+        "notes": "替换实际公开可访问地址；经 invoke_action 调用，文件保存到 MCP 下载目录。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1927,6 +3214,35 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "解析闪传文件下载直链（不下载，由调用方实现下载）",
     "returns": "{ url, file_name, file_size }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_size": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "url",
+        "file_name",
+        "file_size"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "解析闪传文件下载直链（不下载，由调用方实现下载）",
+        "params": {
+          "fileset_id": "<fileset-id>",
+          "file_index": 0
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。 file_index 从 0 开始。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -1989,6 +3305,15 @@ export const ACTIONS: CatalogAction[] = [
         "description": "图片 URL 或 emoji_id（取决于 return_type）"
       }
     },
+    "examples": [
+      {
+        "summary": "获取自定义表情",
+        "params": {
+          "count": 10,
+          "return_type": "url"
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2069,6 +3394,14 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取自定义表情详情",
+        "params": {
+          "count": 10
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2160,6 +3493,17 @@ export const ACTIONS: CatalogAction[] = [
         "isFirstPage"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取表情回应用户（NapCat 分页）",
+        "params": {
+          "message_id": -123456,
+          "emojiId": "128077",
+          "count": 10
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。 后续页原样传回上页 cookie。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2330,6 +3674,14 @@ export const ACTIONS: CatalogAction[] = [
         }
       ]
     },
+    "examples": [
+      {
+        "summary": "按编号查询 QQ 系统表情",
+        "params": {
+          "face_id": 14
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2397,6 +3749,15 @@ export const ACTIONS: CatalogAction[] = [
         "text"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取语音转文字结果",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2447,6 +3808,14 @@ export const ACTIONS: CatalogAction[] = [
         "is_super"
       ]
     },
+    "examples": [
+      {
+        "summary": "判断 QQ 系统表情是否使用超级表情格式",
+        "params": {
+          "face_id": 14
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2607,6 +3976,14 @@ export const ACTIONS: CatalogAction[] = [
         "packs"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 QQ 系统表情目录",
+        "params": {
+          "refresh": false
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2638,6 +4015,33 @@ export const ACTIONS: CatalogAction[] = [
     "name": "forward_friend_single_msg",
     "aliases": [],
     "summary": "转发单条消息给好友",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "转发单条消息给好友",
+        "params": {
+          "message_id": -123456,
+          "user_id": 10001
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -2692,6 +4096,33 @@ export const ACTIONS: CatalogAction[] = [
     "name": "forward_group_single_msg",
     "aliases": [],
     "summary": "转发单条消息到群",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "转发单条消息到群",
+        "params": {
+          "message_id": -123456,
+          "group_id": 20001
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -2746,6 +4177,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "friend_poke",
     "aliases": [],
     "summary": "好友拍一拍",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "好友拍一拍",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "戳一戳指定好友。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -2838,6 +4282,16 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取 AI 语音角色",
+        "params": {
+          "group_id": 20001,
+          "chat_type": 1
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -2889,6 +4343,22 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_ai_record",
     "aliases": [],
     "summary": "生成 AI 语音",
+    "returnsSchema": {
+      "type": "string",
+      "description": "生成的下载或分享 URL 字符串，不是含 url 字段的对象"
+    },
+    "examples": [
+      {
+        "summary": "生成 AI 语音",
+        "params": {
+          "group_id": 20001,
+          "character": "<character-id-from-get_ai_characters>",
+          "text": "你好",
+          "chat_type": 1
+        },
+        "notes": "character 原样使用 get_ai_characters 的 character_id；send_group_ai_record 会直接发送语音。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -2991,6 +4461,13 @@ export const ACTIONS: CatalogAction[] = [
         "keyIndex"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 clientkey",
+        "params": {},
+        "notes": "返回值可能包含凭据或临时下载密钥，请勿公开或记录到不受控日志。"
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -3192,6 +4669,15 @@ export const ACTIONS: CatalogAction[] = [
         "collectionSearchList"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取收藏列表",
+        "params": {
+          "category": 0,
+          "count": 20
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3257,6 +4743,15 @@ export const ACTIONS: CatalogAction[] = [
         "cookies"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 Cookies",
+        "params": {
+          "domain": "qun.qq.com"
+        },
+        "notes": "返回登录凭据，仅在有明确用途时读取，请勿公开。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3309,6 +4804,15 @@ export const ACTIONS: CatalogAction[] = [
         "csrf_token"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取凭证",
+        "params": {
+          "domain": "qun.qq.com"
+        },
+        "notes": "返回登录凭据，仅在有明确用途时读取，请勿公开。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3351,6 +4855,12 @@ export const ACTIONS: CatalogAction[] = [
         "token"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 CSRF 令牌",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -3416,6 +4926,14 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取可疑好友申请",
+        "params": {
+          "count": 20
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3477,6 +4995,16 @@ export const ACTIONS: CatalogAction[] = [
         "emoji_like_list"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取表情回应用户",
+        "params": {
+          "message_id": -123456,
+          "emoji_id": "128077"
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3529,6 +5057,89 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_essence_msg_list",
     "aliases": [],
     "summary": "获取精华消息列表",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "msg_seq": {
+            "type": "integer"
+          },
+          "msg_random": {
+            "type": "integer"
+          },
+          "sender_id": {
+            "type": "integer"
+          },
+          "sender_nick": {
+            "type": "string"
+          },
+          "sender_time": {
+            "type": "integer"
+          },
+          "operator_id": {
+            "type": "integer"
+          },
+          "operator_nick": {
+            "type": "string"
+          },
+          "operator_time": {
+            "type": "integer"
+          },
+          "message_id": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "not": {
+              "const": 0
+            },
+            "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "消息段类型，例如 text、image、reply"
+                },
+                "data": {
+                  "type": "object",
+                  "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ]
+            }
+          }
+        },
+        "required": [
+          "msg_seq",
+          "msg_random",
+          "sender_id",
+          "sender_nick",
+          "sender_time",
+          "operator_id",
+          "operator_nick",
+          "operator_time",
+          "message_id",
+          "content"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取精华消息列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3565,6 +5176,42 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_file",
     "aliases": [],
     "summary": "获取文件信息（仅图片/语音缓存；群文件请用 get_group_file_url）",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "媒体地址；图片无地址时可为原文件标识"
+        },
+        "url": {
+          "type": "string",
+          "description": "媒体下载地址，图片地址可能为空"
+        },
+        "file_size": {
+          "type": "string",
+          "description": "原媒体字节数的十进制字符串"
+        },
+        "file_name": {
+          "type": "string",
+          "description": "文件名或缓存标识"
+        }
+      },
+      "required": [
+        "file",
+        "url",
+        "file_size",
+        "file_name"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取文件信息（仅图片/语音缓存；群文件请用 get_group_file_url）",
+        "params": {
+          "file_id": "<media-file-id-from-message>"
+        },
+        "notes": "仅查询已缓存的图片或语音，先尝试图片，再尝试语音。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3624,6 +5271,15 @@ export const ACTIONS: CatalogAction[] = [
         "fileset_id"
       ]
     },
+    "examples": [
+      {
+        "summary": "从 QQ 闪传分享码或官方分享链接获取 fileset_id",
+        "params": {
+          "share_code": "<share-link-or-code>"
+        },
+        "notes": "share_code 使用实际闪传分享链接或提取码。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3658,6 +5314,66 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_fileset_info",
     "aliases": [],
     "summary": "获取文件集信息",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "fileset_id": {
+          "type": "string"
+        },
+        "file_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fileset_id": {
+                "type": "string"
+              },
+              "file_name": {
+                "type": "string"
+              },
+              "orig_name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number",
+                "description": "文件字节数；此接口字段名为 size"
+              },
+              "share_url": {
+                "type": "string"
+              },
+              "file_id": {
+                "type": "string"
+              },
+              "download_url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileset_id",
+              "file_name",
+              "orig_name",
+              "size",
+              "share_url",
+              "file_id",
+              "download_url"
+            ]
+          }
+        }
+      },
+      "required": [
+        "fileset_id",
+        "file_list"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取文件集信息",
+        "params": {
+          "fileset_id": "<fileset-id>"
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -3690,6 +5406,54 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_flash_file_list",
     "aliases": [],
     "summary": "获取闪传文件列表",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fileset_id": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "orig_name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number",
+            "description": "文件字节数；此接口字段名为 size"
+          },
+          "share_url": {
+            "type": "string"
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "download_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileset_id",
+          "file_name",
+          "orig_name",
+          "size",
+          "share_url",
+          "file_id",
+          "download_url"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取闪传文件列表",
+        "params": {
+          "fileset_id": "<fileset-id>"
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -3722,6 +5486,27 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_flash_file_url",
     "aliases": [],
     "summary": "获取闪传文件链接",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取闪传文件链接",
+        "params": {
+          "fileset_id": "<fileset-id>",
+          "file_index": 0
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。 file_index 从 0 开始。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -3782,9 +5567,147 @@ export const ACTIONS: CatalogAction[] = [
       "properties": {
         "messages": {
           "type": "array",
-          "description": "转发消息节点数组",
+          "description": "转发消息节点数组；节点标识与本地消息 ID 不是同一契约",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "time": {
+                "type": "integer",
+                "description": "消息时间，Unix 秒"
+              },
+              "message_type": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "group"
+                ]
+              },
+              "sub_type": {
+                "type": "string",
+                "description": "消息子类型"
+              },
+              "message_id": {
+                "type": "integer",
+                "description": "转发节点原始标识，缺失时为 0"
+              },
+              "real_id": {
+                "type": "integer",
+                "description": "与节点 message_id 相同"
+              },
+              "user_id": {
+                "type": "integer",
+                "description": "发送者 QQ 号"
+              },
+              "group_id": {
+                "type": "integer",
+                "description": "群聊消息的群号，私聊可省略"
+              },
+              "target_id": {
+                "type": "integer",
+                "description": "私聊目标 QQ 号（若有）"
+              },
+              "message": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "消息段类型，例如 text、image、reply"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ]
+                }
+              },
+              "raw_message": {
+                "type": "string",
+                "description": "消息的 CQ 码字符串形式"
+              },
+              "font": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "object",
+                "properties": {
+                  "user_id": {
+                    "type": "integer"
+                  },
+                  "nickname": {
+                    "type": "string"
+                  },
+                  "card": {
+                    "type": "string"
+                  },
+                  "sex": {
+                    "type": "string",
+                    "enum": [
+                      "male",
+                      "female",
+                      "unknown"
+                    ]
+                  },
+                  "age": {
+                    "type": "integer"
+                  },
+                  "area": {
+                    "type": "string"
+                  },
+                  "level": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "self_id": {
+                "type": "integer"
+              },
+              "post_type": {
+                "const": "message"
+              },
+              "message_format": {
+                "const": "array"
+              },
+              "message_seq": {
+                "type": "integer",
+                "description": "节点消息序号，缺失时使用节点标识或 0"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "self_id",
+              "user_id",
+              "time",
+              "message_id",
+              "message_seq",
+              "real_id",
+              "message_type",
+              "sender",
+              "raw_message",
+              "font",
+              "sub_type",
+              "message",
+              "message_format",
+              "post_type"
+            ]
           }
         }
       },
@@ -3792,6 +5715,15 @@ export const ACTIONS: CatalogAction[] = [
         "messages"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取合并转发消息（id 或 message_id）",
+        "params": {
+          "id": "<res-id-from-forward-message>"
+        },
+        "notes": "id 是合并转发资源标识，通常来自转发消息段或上传结果 res_id，不是普通数值 message_id。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -3856,6 +5788,12 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取好友列表",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -3876,9 +5814,123 @@ export const ACTIONS: CatalogAction[] = [
       "properties": {
         "messages": {
           "type": "array",
-          "description": "消息事件对象数组",
+          "description": "消息对象数组；去除 post_type/self_id，附带 real_id",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "time": {
+                "type": "integer",
+                "description": "消息时间，Unix 秒"
+              },
+              "message_type": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "group"
+                ]
+              },
+              "sub_type": {
+                "type": "string",
+                "description": "消息子类型"
+              },
+              "message_id": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647,
+                "not": {
+                  "const": 0
+                },
+                "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+              },
+              "real_id": {
+                "type": "integer",
+                "description": "原始 message_id；旧历史记录缺失时可为 0"
+              },
+              "user_id": {
+                "type": "integer",
+                "description": "发送者 QQ 号"
+              },
+              "group_id": {
+                "type": "integer",
+                "description": "群聊消息的群号，私聊可省略"
+              },
+              "target_id": {
+                "type": "integer",
+                "description": "私聊目标 QQ 号（若有）"
+              },
+              "message": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "消息段类型，例如 text、image、reply"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ]
+                }
+              },
+              "raw_message": {
+                "type": "string",
+                "description": "消息的 CQ 码字符串形式"
+              },
+              "font": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "object",
+                "properties": {
+                  "user_id": {
+                    "type": "integer"
+                  },
+                  "nickname": {
+                    "type": "string"
+                  },
+                  "card": {
+                    "type": "string"
+                  },
+                  "sex": {
+                    "type": "string",
+                    "enum": [
+                      "male",
+                      "female",
+                      "unknown"
+                    ]
+                  },
+                  "age": {
+                    "type": "integer"
+                  },
+                  "area": {
+                    "type": "string"
+                  },
+                  "level": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
           }
         }
       },
@@ -3886,6 +5938,16 @@ export const ACTIONS: CatalogAction[] = [
         "messages"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取好友消息历史（无锚点时从服务器获取最新双向记录）",
+        "params": {
+          "user_id": 10001,
+          "count": 20
+        },
+        "notes": "省略 message_id 从最新消息开始；只读取当前账号消息。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4021,6 +6083,12 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取分组好友列表",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -4109,6 +6177,15 @@ export const ACTIONS: CatalogAction[] = [
         "no_code_finger_open"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群管理设置的当前值",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4314,6 +6391,15 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4355,9 +6441,336 @@ export const ACTIONS: CatalogAction[] = [
       "properties": {
         "mediaList": {
           "type": "array",
-          "description": "相册媒体项列表（各项字段不固定）",
+          "description": "相册图片或视频，未返回的字段可省略或为 null",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "image": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sloc": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lloc": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "图片长定位标识，供评论、删除等操作使用"
+                  },
+                  "photoUrls": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "spec": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "url": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "width": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "height": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "defaultUrl": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "width": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "height": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "isGif": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "hasRaw": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "video": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "视频标识，供评论、删除等操作使用"
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cover": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sloc": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "lloc": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "图片长定位标识，供评论、删除等操作使用"
+                      },
+                      "photoUrls": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "spec": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "url": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "url": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "width": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                },
+                                "height": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "defaultUrl": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "width": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "height": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      },
+                      "isGif": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "hasRaw": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "width": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "height": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "videoTime": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "时长，十进制字符串"
+                  },
+                  "videoUrl": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "spec": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "url": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "width": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "height": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "uploader": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batchId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "上传批次，十进制字符串"
+              },
+              "uploadTime": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "上传时间，十进制字符串"
+              }
+            }
           }
         },
         "nextAttachInfo": {
@@ -4370,6 +6783,17 @@ export const ACTIONS: CatalogAction[] = [
         "nextAttachInfo"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "attach_info": ""
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。 下一页传回 nextAttachInfo。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4456,6 +6880,15 @@ export const ACTIONS: CatalogAction[] = [
         "remain_at_all_count_for_uin"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群 @全体成员 剩余次数",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4549,6 +6982,15 @@ export const ACTIONS: CatalogAction[] = [
         "group_all_shut"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群详细信息",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4624,6 +7066,15 @@ export const ACTIONS: CatalogAction[] = [
         "total_space"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群文件系统信息",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4673,6 +7124,16 @@ export const ACTIONS: CatalogAction[] = [
         "url"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群文件下载链接",
+        "params": {
+          "group_id": 20001,
+          "file_id": "<file-id-from-get_group_root_files>"
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4844,6 +7305,16 @@ export const ACTIONS: CatalogAction[] = [
         "folders"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群子目录文件列表",
+        "params": {
+          "group_id": 20001,
+          "folder_id": "<folder-id-from-get_group_root_files>"
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -4906,6 +7377,218 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_group_honor_info",
     "aliases": [],
     "summary": "获取群荣誉信息",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "group_id": {
+          "type": "integer"
+        },
+        "current_talkative": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "user_id": {
+                  "type": [
+                    "number",
+                    "string",
+                    "null"
+                  ]
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "avatar": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "user_id",
+                "nickname",
+                "avatar",
+                "description"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "talkative_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "nickname",
+              "avatar",
+              "description"
+            ]
+          }
+        },
+        "performer_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "nickname",
+              "avatar",
+              "description"
+            ]
+          }
+        },
+        "legend_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "nickname",
+              "avatar",
+              "description"
+            ]
+          }
+        },
+        "emotion_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "nickname",
+              "avatar",
+              "description"
+            ]
+          }
+        },
+        "strong_newbie_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "avatar": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "nickname",
+              "avatar",
+              "description"
+            ]
+          },
+          "description": "当前实现始终为空数组"
+        }
+      },
+      "required": [
+        "group_id",
+        "current_talkative",
+        "talkative_list",
+        "performer_list",
+        "legend_list",
+        "emotion_list",
+        "strong_newbie_list"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取群荣誉信息",
+        "params": {
+          "group_id": 20001,
+          "type": "all"
+        },
+        "notes": "未请求的分类仍返回空数组；当前龙王可能为 null。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5009,6 +7692,12 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取被忽略的入群请求（NapCat）",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -5089,6 +7778,12 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取被过滤的入群请求",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -5161,6 +7856,15 @@ export const ACTIONS: CatalogAction[] = [
         "group_all_shut"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群信息",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5267,6 +7971,15 @@ export const ACTIONS: CatalogAction[] = [
         "group_all_shut"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群信息（扩展）",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5375,6 +8088,14 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取群列表",
+        "params": {
+          "no_cache": false
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5514,6 +8235,16 @@ export const ACTIONS: CatalogAction[] = [
         "role"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群成员信息",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5694,6 +8425,15 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取群成员列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5749,9 +8489,123 @@ export const ACTIONS: CatalogAction[] = [
       "properties": {
         "messages": {
           "type": "array",
-          "description": "消息事件对象数组",
+          "description": "消息对象数组；去除 post_type/self_id，附带 real_id",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "time": {
+                "type": "integer",
+                "description": "消息时间，Unix 秒"
+              },
+              "message_type": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "group"
+                ]
+              },
+              "sub_type": {
+                "type": "string",
+                "description": "消息子类型"
+              },
+              "message_id": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647,
+                "not": {
+                  "const": 0
+                },
+                "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+              },
+              "real_id": {
+                "type": "integer",
+                "description": "原始 message_id；旧历史记录缺失时可为 0"
+              },
+              "user_id": {
+                "type": "integer",
+                "description": "发送者 QQ 号"
+              },
+              "group_id": {
+                "type": "integer",
+                "description": "群聊消息的群号，私聊可省略"
+              },
+              "target_id": {
+                "type": "integer",
+                "description": "私聊目标 QQ 号（若有）"
+              },
+              "message": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "消息段类型，例如 text、image、reply"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ]
+                }
+              },
+              "raw_message": {
+                "type": "string",
+                "description": "消息的 CQ 码字符串形式"
+              },
+              "font": {
+                "type": "integer"
+              },
+              "sender": {
+                "type": "object",
+                "properties": {
+                  "user_id": {
+                    "type": "integer"
+                  },
+                  "nickname": {
+                    "type": "string"
+                  },
+                  "card": {
+                    "type": "string"
+                  },
+                  "sex": {
+                    "type": "string",
+                    "enum": [
+                      "male",
+                      "female",
+                      "unknown"
+                    ]
+                  },
+                  "age": {
+                    "type": "integer"
+                  },
+                  "area": {
+                    "type": "string"
+                  },
+                  "level": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
           }
         }
       },
@@ -5759,6 +8613,16 @@ export const ACTIONS: CatalogAction[] = [
         "messages"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群消息历史",
+        "params": {
+          "group_id": 20001,
+          "count": 20
+        },
+        "notes": "省略 message_id 从最新消息开始；翻页使用上一页实际 message_id，不要自行加减。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -5952,6 +8816,15 @@ export const ACTIONS: CatalogAction[] = [
         "folders"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群根目录文件列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6001,6 +8874,16 @@ export const ACTIONS: CatalogAction[] = [
         "url"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取群分享链接",
+        "params": {
+          "group_id": 20001,
+          "need_short_url": true
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6112,6 +8995,15 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取群禁言列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6148,6 +9040,41 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_group_signed_list",
     "aliases": [],
     "summary": "获取群今日打卡列表",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer"
+          },
+          "nick": {
+            "type": "string"
+          },
+          "time": {
+            "type": "integer"
+          },
+          "rank": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "nick",
+          "time",
+          "rank"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取群今日打卡列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6245,6 +9172,17 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取群系统消息",
+        "params": {
+          "group_id": 20001,
+          "only_pending": true,
+          "count": 20
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6343,6 +9281,15 @@ export const ACTIONS: CatalogAction[] = [
         "tags"
       ]
     },
+    "examples": [
+      {
+        "summary": "读取某个群分类下的资料标签",
+        "params": {
+          "group_class": 1
+        },
+        "notes": "group_class 使用实际群分类编号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6378,6 +9325,85 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "获取群待办列表",
     "returns": "群待办数组，包含可用于待办操作的消息标识、服务端摘要与时间",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647,
+            "not": {
+              "const": 0
+            },
+            "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+          },
+          "message_seq": {
+            "type": "integer"
+          },
+          "message_random": {
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "消息段类型，例如 text、image、reply"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "本地缓存中的消息段；未缓存时为 null"
+          },
+          "text": {
+            "type": "string"
+          },
+          "create_time": {
+            "type": "integer"
+          },
+          "update_time": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message_id",
+          "message_seq",
+          "message_random",
+          "message",
+          "text",
+          "create_time",
+          "update_time"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取群待办列表",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6414,6 +9440,42 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_image",
     "aliases": [],
     "summary": "获取图片信息",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "媒体地址；图片无地址时可为原文件标识"
+        },
+        "url": {
+          "type": "string",
+          "description": "媒体下载地址，图片地址可能为空"
+        },
+        "file_size": {
+          "type": "string",
+          "description": "原媒体字节数的十进制字符串"
+        },
+        "file_name": {
+          "type": "string",
+          "description": "文件名或缓存标识"
+        }
+      },
+      "required": [
+        "file",
+        "url",
+        "file_size",
+        "file_name"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取图片信息",
+        "params": {
+          "file": "<image-file-from-message>"
+        },
+        "notes": "file 或 file_id 原样取自图片消息段，须在当前账号媒体缓存中存在。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6477,6 +9539,12 @@ export const ACTIONS: CatalogAction[] = [
         "nickname"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -6491,6 +9559,60 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_mini_app_ark",
     "aliases": [],
     "summary": "获取小程序卡片 ark",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "ver": {
+              "description": "服务端卡片版本，原样透传"
+            },
+            "prompt": {
+              "description": "服务端提示文本，原样透传"
+            },
+            "config": {
+              "description": "服务端卡片配置，原样透传"
+            },
+            "app": {
+              "description": "服务端应用名，原样透传"
+            },
+            "view": {
+              "description": "服务端视图，原样透传"
+            },
+            "meta": {
+              "description": "服务端卡片元数据，原样透传"
+            },
+            "miniappShareOrigin": {
+              "const": 3
+            },
+            "miniappOpenRefer": {
+              "const": "10002"
+            }
+          },
+          "required": [
+            "miniappShareOrigin",
+            "miniappOpenRefer"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "获取小程序卡片 ark",
+        "params": {
+          "type": "bili",
+          "title": "示例视频",
+          "desc": "视频介绍",
+          "pic_url": "https://example.com/cover.png",
+          "jump_url": "https://www.bilibili.com/video/<video-id>"
+        },
+        "notes": "替换为实际分享地址；当前仅支持 bili 和 weibo。返回的 data 是卡片对象，不会自动发送。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6585,6 +9707,154 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "获取消息",
     "returns": "消息事件对象（去除 post_type/self_id，附带 real_id）；逐个尝试刷新图片、语音和视频 URL，成功使用新地址，失败保留该段原地址并继续返回消息；地址更新时同步 raw_message。",
+    "returnsSchema": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "integer",
+              "description": "消息时间，Unix 秒"
+            },
+            "message_type": {
+              "type": "string",
+              "enum": [
+                "private",
+                "group"
+              ]
+            },
+            "sub_type": {
+              "type": "string",
+              "description": "消息子类型"
+            },
+            "message_id": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647,
+              "not": {
+                "const": 0
+              },
+              "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+            },
+            "real_id": {
+              "type": "integer",
+              "description": "原始 message_id；旧历史记录缺失时可为 0"
+            },
+            "user_id": {
+              "type": "integer",
+              "description": "发送者 QQ 号"
+            },
+            "group_id": {
+              "type": "integer",
+              "description": "群聊消息的群号，私聊可省略"
+            },
+            "target_id": {
+              "type": "integer",
+              "description": "私聊目标 QQ 号（若有）"
+            },
+            "message": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "消息段类型，例如 text、image、reply"
+                  },
+                  "data": {
+                    "type": "object",
+                    "description": "字段随消息段类型变化，例如 text 段包含 text，reply 段包含 id",
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "type",
+                  "data"
+                ]
+              }
+            },
+            "raw_message": {
+              "type": "string",
+              "description": "消息的 CQ 码字符串形式"
+            },
+            "font": {
+              "type": "integer"
+            },
+            "sender": {
+              "type": "object",
+              "properties": {
+                "user_id": {
+                  "type": "integer"
+                },
+                "nickname": {
+                  "type": "string"
+                },
+                "card": {
+                  "type": "string"
+                },
+                "sex": {
+                  "type": "string",
+                  "enum": [
+                    "male",
+                    "female",
+                    "unknown"
+                  ]
+                },
+                "age": {
+                  "type": "integer"
+                },
+                "area": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "admin",
+                    "member"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "real_id": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647,
+              "not": {
+                "const": 0
+              },
+              "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+            }
+          },
+          "required": [
+            "real_id"
+          ]
+        }
+      ],
+      "description": "消息事件去除 post_type/self_id 并增加 real_id；群聊和私聊字段有所不同"
+    },
+    "examples": [
+      {
+        "summary": "获取消息",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6670,6 +9940,15 @@ export const ACTIONS: CatalogAction[] = [
         ]
       }
     },
+    "examples": [
+      {
+        "summary": "获取一条消息的全部表情回应",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6749,6 +10028,14 @@ export const ACTIONS: CatalogAction[] = [
         "clients"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取在线客户端",
+        "params": {
+          "no_cache": false
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -6793,6 +10080,16 @@ export const ACTIONS: CatalogAction[] = [
         "url"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取私聊文件下载链接",
+        "params": {
+          "user_id": 10001,
+          "file_id": "<file-id-from-private-message>"
+        },
+        "notes": "使用私聊文件消息段中的 file_id，必要时原样传 file_hash。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7097,6 +10394,16 @@ export const ACTIONS: CatalogAction[] = [
         "voteInfo"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取资料点赞",
+        "params": {
+          "user_id": 10001,
+          "start": 0,
+          "count": 10
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7355,6 +10662,16 @@ export const ACTIONS: CatalogAction[] = [
         "has_more"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "attach_info": ""
+        },
+        "notes": "后续页原样传回上一页的 attach_info；has_more=false 表示结束。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7403,8 +10720,8 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "get_qzone_feeds",
     "aliases": [],
-    "summary": "获取 QQ 空间好友动态（feed）；page_num 仅首页可靠，深翻页需时间游标（暂未实现）",
-    "returns": "好友动态对象，含本页 feed 数组与是否有更多页。",
+    "summary": "获取 QQ 空间好友动态，支持结构化正文与游标分页",
+    "returns": "好友动态、可提取的正文与图片、统计值及下一页游标；未知内容或统计为 null，HTML 保留。",
     "returnsSchema": {
       "type": "object",
       "properties": {
@@ -7437,6 +10754,51 @@ export const ACTIONS: CatalogAction[] = [
               "html": {
                 "type": "string",
                 "description": "预渲染 HTML 原样透传"
+              },
+              "tid": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "可确认的说说编号；其他类型或无法确认时为 null"
+              },
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "当前动态正文，不含评论；无法识别时为 null"
+              },
+              "content_complete": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "正文是否完整；false 表示折叠摘要，null 表示未知"
+              },
+              "images": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "当前正文中可提取的图片地址，不含头像、评论图片或视频封面；不保证完整相册"
+              },
+              "like_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "服务端提供的点赞数；未知时为 null"
+              },
+              "comment_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "服务端提供的评论数；未知时为 null，不以展示的评论条数估算"
               }
             },
             "required": [
@@ -7445,20 +10807,52 @@ export const ACTIONS: CatalogAction[] = [
               "time",
               "appid",
               "key",
-              "html"
+              "html",
+              "tid",
+              "content",
+              "content_complete",
+              "images",
+              "like_count",
+              "comment_count"
             ]
           }
         },
         "has_more": {
           "type": "boolean",
           "description": "服务端是否报告本页之后还有更多页"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "下一页游标，原样作为 cursor 传回；没有更多页时为 null"
         }
       },
       "required": [
         "feeds",
-        "has_more"
+        "has_more",
+        "next_cursor"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 QQ 空间好友动态首页及结构化内容",
+        "params": {
+          "page_num": 1,
+          "count": 10
+        },
+        "notes": "保留 html；content/images 为可提取的正文和图片，未知值为 null。续页使用 next_cursor。"
+      },
+      {
+        "summary": "继续读取上一页之后的好友动态",
+        "params": {
+          "cursor": "<next_cursor-from-get_qzone_feeds>",
+          "count": 10
+        },
+        "notes": "cursor 原样使用上次返回的 next_cursor，仅适用于同一账号；has_more=false 时停止。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7469,7 +10863,7 @@ export const ACTIONS: CatalogAction[] = [
           "type": "integer",
           "minimum": 1
         },
-        "desc": "页码（1 起；仅首页可靠）",
+        "desc": "页码（1 起）；不传 cursor 时从首页顺序定位，较深页可能耗时较长",
         "default": 1
       },
       {
@@ -7483,6 +10877,17 @@ export const ACTIONS: CatalogAction[] = [
         },
         "desc": "本页数量",
         "default": 10
+      },
+      {
+        "name": "cursor",
+        "type": "string",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "desc": "上一次返回的 next_cursor；原样传递，省略 page_num 或传入对应页码"
       }
     ],
     "invariants": [],
@@ -7492,7 +10897,7 @@ export const ACTIONS: CatalogAction[] = [
         "page_num": {
           "type": "integer",
           "minimum": 1,
-          "description": "页码（1 起；仅首页可靠）",
+          "description": "页码（1 起）；不传 cursor 时从首页顺序定位，较深页可能耗时较长",
           "default": 1
         },
         "count": {
@@ -7501,6 +10906,12 @@ export const ACTIONS: CatalogAction[] = [
           "maximum": 50,
           "description": "本页数量",
           "default": 10
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "description": "上一次返回的 next_cursor；原样传递，省略 page_num 或传入对应页码"
         }
       },
       "additionalProperties": true
@@ -7578,6 +10989,14 @@ export const ACTIONS: CatalogAction[] = [
                     "comment_id": {
                       "type": "string",
                       "description": "评论 ID，在所属说说或父评论内唯一"
+                    },
+                    "parent_comment_id": {
+                      "type": "string",
+                      "description": "所属一级评论 ID；回复时作为 comment_id"
+                    },
+                    "parent_comment_uin": {
+                      "type": "integer",
+                      "description": "所属一级评论作者；回复时作为 comment_uin"
                     }
                   },
                   "required": [
@@ -7585,7 +11004,9 @@ export const ACTIONS: CatalogAction[] = [
                     "name",
                     "time",
                     "content",
-                    "comment_id"
+                    "comment_id",
+                    "parent_comment_id",
+                    "parent_comment_uin"
                   ]
                 }
               }
@@ -7608,6 +11029,17 @@ export const ACTIONS: CatalogAction[] = [
         "comments"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 QQ 空间说说详情与一页评论（含服务端内联回复，需有访问权限）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>",
+          "pos": 0,
+          "num": 20
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。 replies 仅为服务端内联回复，不保证完整。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7753,6 +11185,16 @@ export const ACTIONS: CatalogAction[] = [
         "msglist"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 QQ 空间说说列表（默认机器人自己的空间）",
+        "params": {
+          "pos": 0,
+          "num": 20
+        },
+        "notes": "默认读取当前账号；指定 target_uin 时需有访问权限。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7827,6 +11269,15 @@ export const ACTIONS: CatalogAction[] = [
       "type": "array",
       "description": "最近会话列表（占位，恒空）"
     },
+    "examples": [
+      {
+        "summary": "获取最近会话（占位）",
+        "notes": "兼容占位接口，当前始终返回空数组，不能据此判断真实会话列表。",
+        "params": {
+          "count": 10
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7859,6 +11310,70 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "获取语音信息；传 out_format 则服务端转码并附带 base64",
     "returns": "语音信息（file/url 为向 QQ 获取的当前下载地址）；资源元数据缺失或远端获取失败时返回错误。out_format 指定时附带转码后的 base64。",
+    "returnsSchema": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "description": "媒体地址；图片无地址时可为原文件标识"
+            },
+            "url": {
+              "type": "string",
+              "description": "媒体下载地址，图片地址可能为空"
+            },
+            "file_size": {
+              "type": "string",
+              "description": "原媒体字节数的十进制字符串"
+            },
+            "file_name": {
+              "type": "string",
+              "description": "文件名或缓存标识"
+            }
+          },
+          "required": [
+            "file",
+            "url",
+            "file_size",
+            "file_name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "out_format": {
+              "type": "string",
+              "enum": [
+                "mp3",
+                "amr",
+                "wma",
+                "m4a",
+                "spx",
+                "ogg",
+                "wav",
+                "flac"
+              ]
+            },
+            "base64": {
+              "type": "string",
+              "description": "转换后音频的 Base64，未请求 out_format 时省略"
+            }
+          }
+        }
+      ],
+      "description": "未转换时只有媒体信息；指定 out_format 成功转换后同时增加 out_format 和 base64，file_size 仍为原媒体大小"
+    },
+    "examples": [
+      {
+        "summary": "获取语音信息；传 out_format 则服务端转码并附带 base64",
+        "params": {
+          "file": "<record-file-from-message>",
+          "out_format": "mp3"
+        },
+        "notes": "file 来自语音消息段；格式转换依赖服务端可用的转换工具，成功时增加 out_format 和 base64。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -7946,6 +11461,42 @@ export const ACTIONS: CatalogAction[] = [
       "nc_get_rkey"
     ],
     "summary": "获取下载 rkey",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rkey": {
+            "type": "string",
+            "description": "下载密钥，敏感信息"
+          },
+          "type": {
+            "type": "integer"
+          },
+          "ttl": {
+            "type": "integer",
+            "description": "有效时长，秒"
+          },
+          "create_time": {
+            "type": "integer",
+            "description": "创建时间，Unix 秒"
+          }
+        },
+        "required": [
+          "rkey",
+          "type",
+          "ttl",
+          "create_time"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取下载 rkey",
+        "params": {},
+        "notes": "返回值可能包含凭据或临时下载密钥，请勿公开或记录到不受控日志。"
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -7986,6 +11537,13 @@ export const ACTIONS: CatalogAction[] = [
         "name"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取 rkey 服务器信息",
+        "params": {},
+        "notes": "返回值可能包含凭据或临时下载密钥，请勿公开或记录到不受控日志。"
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -8000,6 +11558,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_share_link",
     "aliases": [],
     "summary": "获取文件分享链接",
+    "returnsSchema": {
+      "type": "string",
+      "description": "生成的下载或分享 URL 字符串，不是含 url 字段的对象"
+    },
+    "examples": [
+      {
+        "summary": "获取文件分享链接",
+        "params": {
+          "fileset_id": "<fileset-id>"
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8054,6 +11625,12 @@ export const ACTIONS: CatalogAction[] = [
         "time"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -8183,6 +11760,15 @@ export const ACTIONS: CatalogAction[] = [
         "long_nick"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取陌生人信息",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "替换为需要查询的 QQ 号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -8219,6 +11805,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "get_unidirectional_friend_list",
     "aliases": [],
     "summary": "获取单向好友列表",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "服务端列表项原样透传，目前未归一化字段，不能假定与 get_friend_list 相同"
+      }
+    },
+    "examples": [
+      {
+        "summary": "获取单向好友列表",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -8255,6 +11855,12 @@ export const ACTIONS: CatalogAction[] = [
         "protocol_version"
       ]
     },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -8269,6 +11875,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "group_poke",
     "aliases": [],
     "summary": "群拍一拍",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "群拍一拍",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8323,6 +11943,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "like_qzone",
     "aliases": [],
     "summary": "给一条说说点赞（QQ 空间）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "给一条说说点赞（QQ 空间）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>",
+          "target_uin": 10001
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8393,6 +12027,51 @@ export const ACTIONS: CatalogAction[] = [
     "name": "list_filesets",
     "aliases": [],
     "summary": "列出当前账号的所有闪传文件集",
+    "returnsSchema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fileset_id": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "orig_name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number",
+            "description": "文件字节数；此接口字段名为 size"
+          },
+          "share_url": {
+            "type": "string"
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "download_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileset_id",
+          "file_name",
+          "orig_name",
+          "size",
+          "share_url",
+          "file_id",
+          "download_url"
+        ]
+      }
+    },
+    "examples": [
+      {
+        "summary": "列出当前账号的所有闪传文件集",
+        "params": {}
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -8407,6 +12086,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "mark_group_msg_as_read",
     "aliases": [],
     "summary": "标记群消息已读",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "标记群消息已读",
+        "params": {
+          "message_id": -123456,
+          "group_id": 20001
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8460,6 +12153,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "mark_msg_as_read",
     "aliases": [],
     "summary": "标记消息已读（群聊/私聊自动路由）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "标记消息已读（群聊/私聊自动路由）",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8511,6 +12217,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "mark_private_msg_as_read",
     "aliases": [],
     "summary": "标记私聊消息已读",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "标记私聊消息已读",
+        "params": {
+          "message_id": -123456,
+          "user_id": 10001
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8564,6 +12284,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "modify_custom_face",
     "aliases": [],
     "summary": "修改收藏表情备注",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "修改收藏表情备注",
+        "params": {
+          "emoji_id": "<emoji-id>",
+          "desc": "常用表情"
+        },
+        "notes": "emoji_id 来自 fetch_custom_face_detail。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8609,6 +12343,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "move_custom_face_to_front",
     "aliases": [],
     "summary": "收藏表情移到最前",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "收藏表情移到最前",
+        "params": {
+          "emoji_id": "<emoji-id-from-fetch_custom_face_detail>"
+        },
+        "notes": "emoji_id 来自 fetch_custom_face_detail。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8641,6 +12388,22 @@ export const ACTIONS: CatalogAction[] = [
     "name": "move_group_file",
     "aliases": [],
     "summary": "移动群文件",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "移动群文件",
+        "params": {
+          "group_id": 20001,
+          "file_id": "<file-id>",
+          "parent_directory": "/",
+          "target_directory": "<target-folder-id>"
+        },
+        "notes": "目录和文件标识均来自该群文件列表。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8726,6 +12489,13 @@ export const ACTIONS: CatalogAction[] = [
       "type": "null",
       "description": "packet 状态（占位，恒 null）"
     },
+    "examples": [
+      {
+        "summary": "获取 packet 状态（占位）",
+        "notes": "兼容占位接口，当前始终返回 null，不提供实际收发统计。",
+        "params": {}
+      }
+    ],
     "readOnly": true,
     "params": [],
     "invariants": [],
@@ -8758,6 +12528,15 @@ export const ACTIONS: CatalogAction[] = [
         "ext_status"
       ]
     },
+    "examples": [
+      {
+        "summary": "获取用户在线/扩展状态",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "替换为需要查询的 QQ 号。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -8851,6 +12630,15 @@ export const ACTIONS: CatalogAction[] = [
         "language"
       ]
     },
+    "examples": [
+      {
+        "summary": "OCR 图片（服务端，需图片 URL 或已缓存的图片 file_id）",
+        "params": {
+          "image": "https://example.com/image.png"
+        },
+        "notes": "替换为实际可访问的图片地址或已缓存图片标识；不支持本地路径和 base64。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -8885,6 +12673,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "rename_flash_file",
     "aliases": [],
     "summary": "重命名闪传文件",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "重命名闪传文件",
+        "params": {
+          "fileset_id": "<fileset-id>",
+          "new_name": "新资料包"
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -8931,6 +12733,29 @@ export const ACTIONS: CatalogAction[] = [
     "name": "rename_group_file",
     "aliases": [],
     "summary": "重命名群文件",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "重命名群文件",
+        "params": {
+          "group_id": 20001,
+          "file_id": "<file-id>",
+          "current_parent_directory": "/",
+          "new_name": "新文件名.pdf"
+        },
+        "notes": "file_id 来自群文件列表，目录必须是文件当前所在目录。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9010,6 +12835,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "rename_group_file_folder",
     "aliases": [],
     "summary": "重命名群文件夹",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "重命名群文件夹",
+        "params": {
+          "group_id": 20001,
+          "folder_id": "<folder-id>",
+          "new_folder_name": "课程资料"
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9086,6 +12926,27 @@ export const ACTIONS: CatalogAction[] = [
     "name": "request_decrypt_key",
     "aliases": [],
     "summary": "请求数据库解密密钥",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "db_key": {
+          "type": "string",
+          "description": "数据库密钥，敏感信息"
+        }
+      },
+      "required": [
+        "db_key"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "请求数据库解密密钥",
+        "params": {
+          "db_path": "/path/to/account/nt_msg.db"
+        },
+        "notes": "路径位于 SnowLuma 服务端，必须指向当前账号可用的数据库；返回值是敏感密钥。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9212,6 +13073,14 @@ export const ACTIONS: CatalogAction[] = [
         "faces"
       ]
     },
+    "examples": [
+      {
+        "summary": "搜索 QQ 系统表情",
+        "params": {
+          "query": "微笑"
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -9259,6 +13128,15 @@ export const ACTIONS: CatalogAction[] = [
         "arkMsg"
       ]
     },
+    "examples": [
+      {
+        "summary": "分享用户/群 Ark 卡片（NapCat 标准名）",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "生成联系人分享卡片；返回卡片数据，不等同于发送到聊天。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -9319,6 +13197,33 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送账号收藏表情（emoji_id 或 MD5），保留表情显示样式",
     "returns": "{ message_id: number }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送账号收藏表情（emoji_id 或 MD5），保留表情显示样式",
+        "params": {
+          "group_id": 20001,
+          "emoji_id": "<emoji-id-from-fetch_custom_face_detail>"
+        },
+        "notes": "群聊和私聊目标只能提供一个；emoji_id 来自 fetch_custom_face_detail。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9407,6 +13312,28 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送闪传消息（私聊或群聊，引用 fileset_id 让对端下载）",
     "returns": "{ message_id }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "const": 0,
+          "description": "闪传分享不返回普通消息 ID，0 是占位值，不能用于查询或撤回"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送闪传消息（私聊或群聊，引用 fileset_id 让对端下载）",
+        "params": {
+          "fileset_id": "<fileset-id>",
+          "user_id": 10001
+        },
+        "notes": "fileset_id 来自 create_flash_task、get_fileset_id 或 list_filesets，替换为当前账号可访问的文件集。 会发送分享消息；message_id=0 是占位值，不能用于撤回或查消息。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9470,6 +13397,65 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送合并转发（按 message_type/群号自动路由）",
     "returns": "{ message_id, res_id, forward_id }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647,
+              "not": {
+                "const": 0
+              },
+              "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+            },
+            {
+              "const": 0
+            }
+          ],
+          "description": "已发送时是非零有符号消息 ID；未提供目标、仅上传资源时为 0"
+        },
+        "res_id": {
+          "type": "string"
+        },
+        "forward_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "res_id",
+        "forward_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送合并转发（按 message_type/群号自动路由）",
+        "params": {
+          "group_id": 20001,
+          "messages": [
+            {
+              "type": "node",
+              "data": {
+                "user_id": 10001,
+                "nickname": "示例用户",
+                "content": [
+                  {
+                    "type": "text",
+                    "data": {
+                      "text": "转发内容"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "notes": "替换目标群号；nodes 是自定义转发节点数组。send_forward_msg 不提供目标时仅上传资源并返回 message_id=0。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9588,6 +13574,35 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送 AI 语音到群",
     "returns": "{ message_id }：已发送 AI 语音的 OneBot 消息 ID。",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送 AI 语音到群",
+        "params": {
+          "group_id": 20001,
+          "character": "<character-id-from-get_ai_characters>",
+          "text": "你好",
+          "chat_type": 1
+        },
+        "notes": "character 原样使用 get_ai_characters 的 character_id；send_group_ai_record 会直接发送语音。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9672,6 +13687,15 @@ export const ACTIONS: CatalogAction[] = [
       "type": "string",
       "description": "群 Ark 卡片 JSON 字符串"
     },
+    "examples": [
+      {
+        "summary": "分享群 Ark 卡片（NapCat 标准名）",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "生成群分享卡片；返回卡片数据，不等同于发送到聊天。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -9707,6 +13731,57 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送群合并转发",
     "returns": "{ message_id, res_id, forward_id }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        },
+        "res_id": {
+          "type": "string"
+        },
+        "forward_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "res_id",
+        "forward_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送群合并转发",
+        "params": {
+          "group_id": 20001,
+          "messages": [
+            {
+              "type": "node",
+              "data": {
+                "user_id": 10001,
+                "nickname": "示例用户",
+                "content": [
+                  {
+                    "type": "text",
+                    "data": {
+                      "text": "转发内容"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "notes": "替换目标群号；nodes 是自定义转发节点数组。send_forward_msg 不提供目标时仅上传资源并返回 message_id=0。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9808,6 +13883,40 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送群消息",
     "returns": "{ message_id: number }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送群消息",
+        "params": {
+          "group_id": 20001,
+          "message": [
+            {
+              "type": "text",
+              "data": {
+                "text": "你好"
+              }
+            }
+          ]
+        },
+        "notes": "替换目标群号；成功返回的 message_id 可为负值。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9869,6 +13978,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "send_like",
     "aliases": [],
     "summary": "点赞",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "点赞",
+        "params": {
+          "user_id": 10001,
+          "times": 1
+        }
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -9919,6 +14041,34 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送消息（按 message_type/群号 自动路由群聊或私聊）",
     "returns": "{ message_id: number }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送消息（按 message_type/群号 自动路由群聊或私聊）",
+        "params": {
+          "message_type": "group",
+          "group_id": 20001,
+          "message": "你好"
+        },
+        "notes": "必须提供对应目标；私聊使用 message_type=private 和 user_id。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10005,6 +14155,29 @@ export const ACTIONS: CatalogAction[] = [
       ".send_packet"
     ],
     "summary": "发送原始 SSO 包（cmd + hex data）",
+    "returnsSchema": {
+      "anyOf": [
+        {
+          "type": "string",
+          "description": "rsp=true 时返回的十六进制响应正文"
+        },
+        {
+          "type": "null",
+          "description": "rsp=false 时不等待响应，data 为 null"
+        }
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送原始 SSO 包（cmd + hex data）",
+        "params": {
+          "cmd": "<command-from-validated-request>",
+          "data": "<hex-encoded-request>",
+          "rsp": true
+        },
+        "notes": "仅供有协议经验的调用方：cmd 和 data 必须成对替换为已验证的命令与十六进制请求；示例占位符不可直接发送。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10063,6 +14236,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "send_poke",
     "aliases": [],
     "summary": "拍一拍（群聊/私聊自动路由）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "拍一拍（群聊/私聊自动路由）",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10113,6 +14300,57 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送私聊合并转发",
     "returns": "{ message_id, res_id, forward_id }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        },
+        "res_id": {
+          "type": "string"
+        },
+        "forward_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "res_id",
+        "forward_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送私聊合并转发",
+        "params": {
+          "user_id": 10001,
+          "messages": [
+            {
+              "type": "node",
+              "data": {
+                "user_id": 10001,
+                "nickname": "示例用户",
+                "content": [
+                  {
+                    "type": "text",
+                    "data": {
+                      "text": "转发内容"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "notes": "替换目标好友 QQ 号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10212,6 +14450,33 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "发送私聊消息",
     "returns": "{ message_id: number }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "not": {
+            "const": 0
+          },
+          "description": "非零有符号 32 位消息 ID，负值合法；必须原样保留"
+        }
+      },
+      "required": [
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发送私聊消息",
+        "params": {
+          "user_id": 10001,
+          "message": "你好"
+        },
+        "notes": "替换目标好友 QQ 号；临时会话需另传来源 group_id。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10284,6 +14549,31 @@ export const ACTIONS: CatalogAction[] = [
     "name": "send_qzone_msg",
     "aliases": [],
     "summary": "发表说说（QQ 空间，支持纯文字或带图；传 images 自动上传；可设置查看权限）",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "tid": {
+          "type": "string"
+        },
+        "time": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tid",
+        "time"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "发表说说（QQ 空间，支持纯文字或带图；传 images 自动上传；可设置查看权限）",
+        "params": {
+          "content": "今天的学习记录",
+          "ugc_right": 64
+        },
+        "notes": "会发布说说；ugc_right=64 仅自己可见。16/128 还必须提供 target_uins。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10384,6 +14674,19 @@ export const ACTIONS: CatalogAction[] = [
     "returnsSchema": {
       "type": "null"
     },
+    "examples": [
+      {
+        "summary": "发送图文 Ark 卡片（私聊/群聊）",
+        "params": {
+          "group_id": 20001,
+          "title": "学习资料",
+          "desc": "本周课程资料",
+          "jump_url": "https://example.com/course",
+          "preview_url": "https://example.com/cover.png"
+        },
+        "notes": "替换目标群号及实际链接；会发送分享卡片。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10494,6 +14797,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_diy_online_status",
     "aliases": [],
     "summary": "设置自定义在线状态",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置自定义在线状态",
+        "params": {
+          "face_id": 14,
+          "face_type": 1,
+          "wording": "学习中"
+        }
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10556,6 +14873,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_doubt_friends_add_request",
     "aliases": [],
     "summary": "处理可疑好友申请",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "处理可疑好友申请",
+        "params": {
+          "flag": "<uid-from-doubt-request>",
+          "approve": true
+        },
+        "notes": "flag 使用 get_doubt_friends_add_request 返回项的 uid。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10601,6 +14932,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_essence_msg",
     "aliases": [],
     "summary": "设置精华消息",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置精华消息",
+        "params": {
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10639,6 +14983,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_friend_add_request",
     "aliases": [],
     "summary": "处理好友添加请求",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "处理好友添加请求",
+        "params": {
+          "flag": "<flag-from-friend-request-event>",
+          "approve": true
+        },
+        "notes": "flag 必须原样使用当前账号好友请求事件的 flag，不能根据 QQ 号构造。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10684,6 +15042,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_friend_remark",
     "aliases": [],
     "summary": "设置好友备注",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置好友备注",
+        "params": {
+          "user_id": 10001,
+          "remark": "同学"
+        }
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10731,6 +15102,20 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "移动好友到指定分组",
     "returns": "成功时返回空数据。",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "移动好友到指定分组",
+        "params": {
+          "uin": 10001,
+          "categoryName": "同学"
+        },
+        "notes": "categoryId 与 categoryName 二选一。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10799,6 +15184,22 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_add_option",
     "aliases": [],
     "summary": "设置加群选项",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置加群选项",
+        "params": {
+          "group_id": 20001,
+          "add_type": 2,
+          "group_question": "入群用途？",
+          "group_answer": "学习交流"
+        },
+        "notes": "修改加群设置前先用 get_group_admin_settings 查看当前状态，并确认目标设置值。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10872,6 +15273,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_add_request",
     "aliases": [],
     "summary": "处理加群请求",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "处理加群请求",
+        "params": {
+          "flag": "<flag-from-group-request-event>",
+          "sub_type": "add",
+          "approve": true
+        },
+        "notes": "flag 和 sub_type 原样取自同一条群请求事件；邀请事件使用 invite。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -10952,6 +15368,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_admin",
     "aliases": [],
     "summary": "设置/取消管理员",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置/取消管理员",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001,
+          "enable": true
+        },
+        "notes": "需要群主权限；会授予该成员管理员身份。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11018,6 +15449,34 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "set_group_album_media_like",
     "aliases": [],
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "batch_id": "1700000000"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。 batch_id 必须是实际批次的十进制字符串。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11093,6 +15552,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_anonymous",
     "aliases": [],
     "summary": "匿名开关（未实现，返回 ok）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "匿名开关（未实现，返回 ok）",
+        "params": {},
+        "notes": "兼容占位接口：当前返回成功但不会修改匿名设置。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -11107,6 +15577,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_anonymous_ban",
     "aliases": [],
     "summary": "匿名禁言（未实现，返回 ok）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "匿名禁言（未实现，返回 ok）",
+        "params": {},
+        "notes": "兼容占位接口：当前返回成功但不会修改匿名设置。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -11121,6 +15602,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_ban",
     "aliases": [],
     "summary": "禁言群成员（duration=0 解除）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "禁言群成员（duration=0 解除）",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001,
+          "duration": 600
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。 duration 为秒，0 表示解除禁言。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11192,6 +15688,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_card",
     "aliases": [],
     "summary": "设置群名片（空字符串清除）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群名片（空字符串清除）",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001,
+          "card": "示例群名片"
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11259,6 +15770,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_kick",
     "aliases": [],
     "summary": "踢出群成员",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "踢出群成员",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001,
+          "reject_add_request": false
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11326,6 +15852,24 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_kick_members",
     "aliases": [],
     "summary": "批量踢出群成员",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "批量踢出群成员",
+        "params": {
+          "group_id": 20001,
+          "user_id": [
+            10001,
+            10002
+          ],
+          "reject_add_request": false
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11399,6 +15943,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_leave",
     "aliases": [],
     "summary": "退群",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "退群",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "会退出该群，请确认目标群号后调用。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11435,6 +15992,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_member_invite_policy",
     "aliases": [],
     "summary": "设置群成员邀请策略",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群成员邀请策略",
+        "params": {
+          "group_id": 20001,
+          "policy": "require_approval"
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11499,6 +16070,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_member_permissions",
     "aliases": [],
     "summary": "设置群成员权限（仅群主可改）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群成员权限（仅群主可改）",
+        "params": {
+          "group_id": 20001,
+          "allow_member_upload_album": false
+        },
+        "notes": "至少传一个权限字段；仅修改传入的权限，其余保持原样。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11570,6 +16155,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_name",
     "aliases": [],
     "summary": "设置群名",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群名",
+        "params": {
+          "group_id": 20001,
+          "group_name": "学习交流群"
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11619,6 +16218,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_new_member_history_visibility",
     "aliases": [],
     "summary": "设置新成员是否可查看历史消息",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置新成员是否可查看历史消息",
+        "params": {
+          "group_id": 20001,
+          "visible": true
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11667,6 +16280,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_portrait",
     "aliases": [],
     "summary": "设置群头像",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群头像",
+        "params": {
+          "group_id": 20001,
+          "file": "file:///path/to/avatar.png"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11719,6 +16346,22 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_reaction",
     "aliases": [],
     "summary": "群聊表情回应",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "群聊表情回应",
+        "params": {
+          "message_id": -123456,
+          "group_id": 20001,
+          "code": "128077",
+          "is_set": true
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11799,6 +16442,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_remark",
     "aliases": [],
     "summary": "设置群备注",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群备注",
+        "params": {
+          "group_id": 20001,
+          "remark": "学习小组"
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11845,6 +16502,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_robot_add_option",
     "aliases": [],
     "summary": "设置群机器人加群选项",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群机器人加群选项",
+        "params": {
+          "group_id": 20001,
+          "robot_member_switch": 1,
+          "robot_member_examine": 1
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11907,6 +16579,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_search",
     "aliases": [],
     "summary": "设置群被搜索方式（群指纹 / 群号搜索开关）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群被搜索方式（群指纹 / 群号搜索开关）",
+        "params": {
+          "group_id": 20001,
+          "no_finger_open": 0,
+          "no_code_finger_open": 0
+        },
+        "notes": "替换群号；数值含义以当前群设置为准。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -11971,6 +16658,21 @@ export const ACTIONS: CatalogAction[] = [
       "send_group_sign"
     ],
     "summary": "群签到",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "description": "成功时为空对象 {}，不是 null"
+    },
+    "examples": [
+      {
+        "summary": "群签到",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "将 group_id 替换为当前账号可访问的群号。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12007,6 +16709,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_special_title",
     "aliases": [],
     "summary": "设置群头衔",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群头衔",
+        "params": {
+          "group_id": 20001,
+          "user_id": 10001,
+          "special_title": "学习委员"
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12074,6 +16791,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_todo",
     "aliases": [],
     "summary": "设置群待办",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置群待办",
+        "params": {
+          "group_id": 20001,
+          "message_id": -123456
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。 必须是该群的消息。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12130,6 +16861,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_group_whole_ban",
     "aliases": [],
     "summary": "全员禁言开关",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "全员禁言开关",
+        "params": {
+          "group_id": 20001,
+          "enable": true
+        },
+        "notes": "替换群号和成员 QQ 号；操作是否允许取决于当前账号在该群的权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12179,6 +16924,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_input_status",
     "aliases": [],
     "summary": "设置输入状态",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "description": "成功时为空对象 {}，不是 null"
+    },
+    "examples": [
+      {
+        "summary": "设置输入状态",
+        "params": {
+          "user_id": 10001,
+          "event_type": 0
+        }
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12226,6 +16986,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_msg_emoji_like",
     "aliases": [],
     "summary": "设置消息表情回应",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置消息表情回应",
+        "params": {
+          "message_id": -123456,
+          "emoji_id": "128077",
+          "set": true
+        },
+        "notes": "使用消息事件或发送结果中的真实 message_id，负值合法；消息须在当前账号的消息存储中可查询。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12291,6 +17066,21 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_online_status",
     "aliases": [],
     "summary": "设置在线状态",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置在线状态",
+        "params": {
+          "status": 11,
+          "ext_status": 0,
+          "battery_status": 100
+        },
+        "notes": "修改当前账号状态；具体状态码须与目标状态对应。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12357,6 +17147,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_qq_avatar",
     "aliases": [],
     "summary": "设置 QQ 头像",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置 QQ 头像",
+        "params": {
+          "file": "file:///path/to/avatar.png"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12391,6 +17194,19 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_qq_profile",
     "aliases": [],
     "summary": "设置 QQ 资料",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "设置 QQ 资料",
+        "params": {
+          "nickname": "示例昵称"
+        },
+        "notes": "会修改当前账号的资料；只传入需要修改的字段。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12446,6 +17262,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_qzone_ban",
     "aliases": [],
     "summary": "拉黑或解除拉黑某人（修改机器人自身 QQ 空间黑名单；enable=true 拉黑，false 解除）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "拉黑或解除拉黑某人（修改机器人自身 QQ 空间黑名单；enable=true 拉黑，false 解除）",
+        "params": {
+          "user_id": 10001,
+          "enable": true
+        },
+        "notes": "修改当前账号空间黑名单。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12510,6 +17340,19 @@ export const ACTIONS: CatalogAction[] = [
         "ugc_right"
       ]
     },
+    "examples": [
+      {
+        "summary": "修改一条已发说说的查看权限（QQ 空间，按 tid）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>",
+          "ugc_right": 16,
+          "target_uins": [
+            10001
+          ]
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。 16 表示仅所选好友可见。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12584,6 +17427,17 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_restart",
     "aliases": [],
     "summary": "重启（不支持）",
+    "returnsSchema": {
+      "not": {},
+      "description": "当前始终返回失败，没有成功 data；失败响应 data 为 null，原因见 wording"
+    },
+    "examples": [
+      {
+        "summary": "重启（不支持）",
+        "params": {},
+        "notes": "当前未实现，调用返回失败；不要将其当作可用能力。"
+      }
+    ],
     "readOnly": false,
     "params": [],
     "invariants": [],
@@ -12598,6 +17452,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "set_self_longnick",
     "aliases": [],
     "summary": "设置个性签名（longNick/long_nick，严格 string）",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false,
+      "description": "成功时为空对象 {}，不是 null"
+    },
+    "examples": [
+      {
+        "summary": "设置个性签名（longNick/long_nick，严格 string）",
+        "params": {
+          "long_nick": "学习中"
+        }
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12641,6 +17509,15 @@ export const ACTIONS: CatalogAction[] = [
       "type": "string",
       "description": "群 Ark 卡片 JSON 字符串"
     },
+    "examples": [
+      {
+        "summary": "分享群 Ark 卡片",
+        "params": {
+          "group_id": 20001
+        },
+        "notes": "生成群分享卡片；返回卡片数据，不等同于发送到聊天。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -12688,6 +17565,15 @@ export const ACTIONS: CatalogAction[] = [
         "arkMsg"
       ]
     },
+    "examples": [
+      {
+        "summary": "分享用户/群 Ark 卡片",
+        "params": {
+          "user_id": 10001
+        },
+        "notes": "生成联系人分享卡片；返回卡片数据，不等同于发送到聊天。"
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -12748,6 +17634,58 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "测试下载流(推送 10 个数据帧,验证流式传输,不触达 QQ)",
     "returns": "流式帧:data_chunk*10 → data_complete(error=true 时以 error 帧结束)",
+    "returnsSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "data_type": {
+              "const": "data_chunk"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "response"
+            },
+            "data_type": {
+              "const": "data_complete"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "data_type",
+            "data"
+          ]
+        }
+      ],
+      "description": "成功时 10 个 data_chunk 后接 data_complete；error=true 时最终为失败帧"
+    },
+    "examples": [
+      {
+        "summary": "测试下载流(推送 10 个数据帧,验证流式传输,不触达 QQ)",
+        "params": {
+          "error": false
+        },
+        "notes": "经 invoke_action 调用，仅测试传输，不访问 QQ。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12781,6 +17719,27 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "转存群文件",
     "returns": "{ ok: true }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "转存群文件",
+        "params": {
+          "group_id": 20001,
+          "file_id": "<file-id-from-get_group_root_files>"
+        },
+        "notes": "替换群文件列表中的实际 file_id；需要对应文件操作权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12847,6 +17806,16 @@ export const ACTIONS: CatalogAction[] = [
         "words"
       ]
     },
+    "examples": [
+      {
+        "summary": "英译中",
+        "params": {
+          "words": [
+            "Hello"
+          ]
+        }
+      }
+    ],
     "readOnly": true,
     "params": [
       {
@@ -12883,6 +17852,20 @@ export const ACTIONS: CatalogAction[] = [
     "name": "unlike_qzone",
     "aliases": [],
     "summary": "取消对一条说说的点赞（QQ 空间；取消赞端点待真机核实）",
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "取消对一条说说的点赞（QQ 空间；取消赞端点待真机核实）",
+        "params": {
+          "tid": "<tid-from-get_qzone_msg_list>",
+          "target_uin": 10001
+        },
+        "notes": "tid 来自 get_qzone_msg_list；操作需有该说说的访问或管理权限。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -12954,6 +17937,106 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "以流式分块方式上传文件到机器人本地(返回可用于发送的本地路径)",
     "returns": "流式帧:分块确认 type=stream、完成 type=response(含 file_path/file_name/file_size/sha256)",
+    "returnsSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stream"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "file_created",
+                "chunk_received"
+              ]
+            },
+            "received_chunks": {
+              "type": "integer"
+            },
+            "total_chunks": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "stream_id",
+            "status",
+            "received_chunks",
+            "total_chunks"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "response"
+            },
+            "stream_id": {
+              "type": "string"
+            },
+            "status": {
+              "const": "file_complete"
+            },
+            "received_chunks": {
+              "type": "integer"
+            },
+            "total_chunks": {
+              "type": "integer"
+            },
+            "file_path": {
+              "type": "string"
+            },
+            "file_name": {
+              "type": "string"
+            },
+            "file_size": {
+              "type": "integer"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stream_id",
+            "status",
+            "received_chunks",
+            "total_chunks",
+            "file_path",
+            "file_name",
+            "file_size",
+            "sha256"
+          ]
+        }
+      ],
+      "description": "分块确认与完成帧的 data；reset 和其他失败由错误帧返回。必须等到 file_complete 才能使用 file_path"
+    },
+    "examples": [
+      {
+        "summary": "上传分块",
+        "params": {
+          "stream_id": "example-upload-001",
+          "filename": "hello.txt",
+          "total_chunks": 1,
+          "file_size": 5,
+          "chunk_index": 0,
+          "chunk_data": "aGVsbG8="
+        },
+        "notes": "第 1 步：每次上传生成新的 stream_id；这里上传 hello 的唯一分块。通过 invoke_action 调用，分块确认不等于整文件完成。"
+      },
+      {
+        "summary": "完成同一上传",
+        "params": {
+          "stream_id": "example-upload-001",
+          "is_complete": true
+        },
+        "notes": "第 2 步：等待全部分块确认后，用同一个 stream_id 单独请求完成；成功时返回 file_path。MCP 的 invoke_action 也可通过 execution.input_file 自动完成上传。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13129,6 +18212,56 @@ export const ACTIONS: CatalogAction[] = [
     "name": "upload_forward_msg",
     "aliases": [],
     "summary": "上传转发消息",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "res_id": {
+          "type": "string"
+        },
+        "forward_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "const": 0,
+          "description": "仅上传资源，不代表已发送消息；0 不能用于消息查询或撤回"
+        },
+        "group_id": {
+          "type": "integer",
+          "description": "仅请求提供正数 group_id 时出现"
+        }
+      },
+      "required": [
+        "res_id",
+        "forward_id",
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "上传转发消息",
+        "params": {
+          "group_id": 20001,
+          "messages": [
+            {
+              "type": "node",
+              "data": {
+                "user_id": 10001,
+                "nickname": "示例用户",
+                "content": [
+                  {
+                    "type": "text",
+                    "data": {
+                      "text": "转发内容"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "notes": "仅上传合并转发资源，不发送聊天消息；message_id=0 是占位值，后续使用 res_id。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13184,6 +18317,51 @@ export const ACTIONS: CatalogAction[] = [
     "name": "upload_foward_msg",
     "aliases": [],
     "summary": "上传转发消息（别名拼写）",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "res_id": {
+          "type": "string"
+        },
+        "forward_id": {
+          "type": "string"
+        },
+        "message_id": {
+          "const": 0,
+          "description": "仅上传资源，不代表已发送消息；0 不能用于消息查询或撤回"
+        }
+      },
+      "required": [
+        "res_id",
+        "forward_id",
+        "message_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "上传转发消息（别名拼写）",
+        "params": {
+          "messages": [
+            {
+              "type": "node",
+              "data": {
+                "user_id": 10001,
+                "nickname": "示例用户",
+                "content": [
+                  {
+                    "type": "text",
+                    "data": {
+                      "text": "转发内容"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "notes": "历史拼写兼容接口，仅上传资源；message_id=0，返回值没有 group_id。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13240,6 +18418,28 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "上传群文件",
     "returns": "{ file_id: string }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "上传群文件",
+        "params": {
+          "group_id": 20001,
+          "file": "file:///path/to/report.pdf",
+          "name": "报告.pdf"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13343,6 +18543,22 @@ export const ACTIONS: CatalogAction[] = [
   {
     "name": "upload_image_to_qun_album",
     "aliases": [],
+    "returnsSchema": {
+      "type": "null",
+      "description": "成功时 data 为 null；失败另见响应的 status、retcode 和 wording"
+    },
+    "examples": [
+      {
+        "summary": "基本调用",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "album_name": "活动照片",
+          "file": "file:///path/to/photo.png"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。 示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13424,6 +18640,28 @@ export const ACTIONS: CatalogAction[] = [
     "aliases": [],
     "summary": "上传私聊文件",
     "returns": "{ file_id: string }",
+    "returnsSchema": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_id"
+      ]
+    },
+    "examples": [
+      {
+        "summary": "上传私聊文件",
+        "params": {
+          "user_id": 10001,
+          "file": "file:///path/to/report.pdf",
+          "name": "报告.pdf"
+        },
+        "notes": "示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。 默认上传并发送给该好友。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {
@@ -13513,6 +18751,18 @@ export const ACTIONS: CatalogAction[] = [
         "id"
       ]
     },
+    "examples": [
+      {
+        "summary": "上传视频到群相册",
+        "params": {
+          "group_id": 20001,
+          "album_id": "<album-id>",
+          "album_name": "活动视频",
+          "file": "file:///path/to/video.mp4"
+        },
+        "notes": "album_id 来自 get_group_album_list；lloc 或视频 id、batch_id 来自 get_group_album_media_list。替换群号及对应资源标识。 示例路径位于 SnowLuma 服务端，须替换为该服务可读取的实际文件。"
+      }
+    ],
     "readOnly": false,
     "params": [
       {

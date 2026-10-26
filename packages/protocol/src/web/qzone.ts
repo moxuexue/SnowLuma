@@ -1,6 +1,14 @@
 import type { JsonValue } from '@snowluma/common/json';
 import { createLogger } from '@snowluma/common/logger';
 import { RequestUtil, cookieToString, getBknFromCookie } from './request-util';
+import { parseQzoneFeedContent, type QzoneFeedContent } from './qzone-feed-content';
+import {
+    decodeQzoneFeedCursor,
+    encodeQzoneFeedCursor,
+    initialQzoneFeedState,
+    nextQzoneFeedState,
+    qzoneFeedPosition,
+} from './qzone-feed-cursor';
 
 const log = createLogger('Bridge.Web');
 
@@ -638,13 +646,6 @@ export async function getQzoneMsgList(
 }
 
 // ─────────────── 好友动态 (friend feeds) — feeds3_html_more ───────────────
-// The friend-feed CGI returns each feed as a pre-rendered HTML blob plus a
-// few structured fields. We surface the stable structured fields and pass
-// the `html` through verbatim (deep HTML→segment parsing is out of scope —
-// callers that want it parse the blob themselves). Exact field names /
-// pagination cursor to be re-confirmed against a live capture, same posture
-// as the msglist helper.
-
 interface RawFeedItem {
     uin?: number | string;
     nickname?: string;
@@ -654,6 +655,8 @@ interface RawFeedItem {
     key?: string;
     feedskey?: string;
     html?: string;
+    likecnt?: number | string;
+    commentcnt?: number | string;
 }
 
 interface RawFeedsResponse {
@@ -662,6 +665,7 @@ interface RawFeedsResponse {
     message?: string;
     data?: {
         data?: RawFeedItem[] | null;
+        main?: Record<string, unknown>;
         hasmore?: number | string;
     };
 }
@@ -689,107 +693,233 @@ export interface QzoneFeedsResult {
     has_more: boolean;
 }
 
-/** Pure transform from the raw feeds response into the OneBot list. */
-export function mapFeeds(data: RawFeedsResponse): QzoneFeedsResult {
-    // The CGI pads the array with trailing `undefined`/null holes — drop them.
-    const list = (data.data?.data ?? []).filter((f): f is RawFeedItem => !!f);
+export interface QzoneStructuredFeed extends QzoneFeed, QzoneFeedContent {}
+
+export interface QzoneFeedsPage extends QzoneFeedsResult {
+    feeds: QzoneStructuredFeed[];
+    /** Opaque, account-bound continuation. Null at the end of the list. */
+    next_cursor: string | null;
+}
+
+function feedHasMore(data: RawFeedsResponse): boolean {
+    const value = data.data?.main === undefined ? data.data?.hasmore : data.data.main.hasMoreFeeds;
+
+    if (value === true || value === 1 || value === '1') {
+        return true;
+    }
+
+    if (value === false || value === 0 || value === '0') {
+        return false;
+    }
+
+    throw new Error('空间好友动态缺少有效的分页结束标志');
+}
+
+/** Pure mapping; request continuation is attached by getQzoneFeeds. */
+export function mapFeeds(data: RawFeedsResponse): QzoneFeedsPage {
+    if (!Array.isArray(data.data?.data)) {
+        throw new Error('无法获取空间好友动态（响应结构异常）');
+    }
+
+    // The web payload pads lists with null/undefined; these are not feed entries.
+    const list = data.data.data.filter((item) => item != null);
     return {
-        feeds: list.map((f) => ({
-            uin: Number(f.uin ?? 0),
-            nickname: f.nickname ?? '',
-            time: Number(f.abstime ?? 0),
-            appid: Number(f.appid ?? 0),
-            // `key` is the per-feed handle; `feedskey` is its older alias on some
-            // feed types. They name the same per-feed identifier here (NOT the
-            // list-level next-page cursor, which lives on data.* not the item).
-            key: String(f.key ?? f.feedskey ?? ''),
-            html: f.html ?? '',
-        })),
-        has_more: Number(data.data?.hasmore ?? 0) !== 0,
+        feeds: list.map((item) => {
+            if (typeof item !== 'object' || Array.isArray(item)) {
+                throw new Error('空间好友动态条目结构异常');
+            }
+
+            const feed: QzoneFeed = {
+                uin: Number(item.uin ?? 0),
+                nickname: item.nickname ?? '',
+                time: Number(item.abstime ?? 0),
+                appid: Number(item.appid ?? 0),
+                key: String(item.key ?? item.feedskey ?? ''),
+                html: item.html ?? '',
+            };
+
+            if (
+                ![feed.uin, feed.time, feed.appid].every(
+                    (n) => Number.isSafeInteger(n) && n >= 0,
+                ) ||
+                typeof feed.nickname !== 'string' ||
+                typeof feed.html !== 'string'
+            ) {
+                throw new Error('空间好友动态条目字段异常');
+            }
+
+            return {
+                ...feed,
+                ...parseQzoneFeedContent(
+                    feed.html,
+                    feed.key,
+                    feed.uin,
+                    feed.appid,
+                    item.likecnt,
+                    item.commentcnt,
+                ),
+            };
+        }),
+        has_more: feedHasMore(data),
+        next_cursor: null,
     };
 }
 
-/**
- * Fetch the 好友动态 (friend-feed) list via the feeds3_html_more CGI on
- * ic2.qzone.qq.com, routed through the h5.qzone.qq.com proxy gateway — the
- * same gateway {@link getQzoneMsgList} and group-album use, because the
- * qzone.qq.com cookie jar only authenticates against the proxy origin
- * (hitting ic2 directly fails the referer/same-origin check). Body is
- * requested as JSONP (`format=jsonp` + a callback) and parsed with the
- * shared tolerant parser, matching slice-1's contract exactly.
- *
- * `pageNum` is 1-based; `count` is the page size. PAGINATION CAVEAT: this
- * CGI's reliable deep-pagination is driven by a time cursor
- * (begintime/externparam/usertime carried forward from the previous page),
- * which we do not yet thread — so `pageNum` is dependable for the first
- * page and `has_more` only signals whether more exist, not a stable
- * page-2 fetch. Cursor pagination is deferred until a live capture.
- *
- * Same throw-on-auth-failure contract as {@link getQzoneMsgList}: a missing
- * `data.data` array means the cookie/auth failed and throws, whereas a
- * genuinely empty feed (`data.data: []`) maps to an empty list.
- */
+/** Read one page. Legacy page numbers walk continuations from the beginning. */
 export async function getQzoneFeeds(
     cookieObject: Record<string, string>,
     selfUin: string,
     pageNum = 1,
     count = 10,
-): Promise<QzoneFeedsResult> {
+    cursor?: string,
+): Promise<QzoneFeedsPage> {
     if (!cookieObject || typeof cookieObject !== 'object') {
         throw new Error('cookieObject is required');
     }
 
+    if (
+        !Number.isSafeInteger(pageNum) ||
+        pageNum < 1 ||
+        !Number.isSafeInteger(count) ||
+        count < 1 ||
+        count > 50
+    ) {
+        throw new Error('空间好友动态页码或数量无效');
+    }
+
+    const start =
+        cursor === undefined
+            ? { page: 1, state: initialQzoneFeedState() }
+            : decodeQzoneFeedCursor(cursor, selfUin);
+
+    if (cursor !== undefined && pageNum !== 1 && pageNum !== start.page) {
+        throw new Error('page_num 与空间好友动态 cursor 不匹配');
+    }
+
+    const target = cursor === undefined ? pageNum : start.page;
     const bkn = getBknFromCookie(cookieObject);
-    const url = `https://h5.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more?${new URLSearchParams(
-        {
+    let state = start.state;
+    const seen = new Set([qzoneFeedPosition(state)]);
+    log.debug(
+        'getQzoneFeeds start (uin=%s page=%d count=%d cursor=%s)',
+        selfUin,
+        target,
+        count,
+        cursor !== undefined,
+    );
+
+    for (let page = start.page; page <= target; page++) {
+        const query = new URLSearchParams({
             uin: selfUin,
             scope: '0',
             view: '1',
-            filter: 'all',
+            gid: '',
             flag: '1',
+            filter: 'all',
             applist: 'all',
-            pagenum: String(pageNum),
+            refresh: '0',
+            firstGetGroup: '0',
+            mixnocache: '0',
+            scene: '0',
+            sidomain: 'qzonestyle.gtimg.cn',
             count: String(count),
-            aisortEndTime: '0',
-            aisortOffset: '0',
-            aisortBeginTime: '0',
-            begintime: '0',
+            ...state,
+            getAisort: state.aisortNextTime,
             g_tk: bkn,
             callback: '_preloadCallback',
             format: 'jsonp',
             useutf8: '1',
             outputhtmlfeed: '1',
-        },
-    ).toString()}`;
+            usertime: String(Date.now()),
+            rd: String(Math.random()),
+            windowId: String(Math.random()),
+        });
+        query.delete('aisortNextTime');
+        const url = `https://h5.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more?${query}`;
 
-    const text = await RequestUtil.HttpGetText(url, 'GET', '', {
-        Cookie: cookieToString(cookieObject),
-    });
-    log.trace('getQzoneFeeds raw body (uin=%s): %s', selfUin, text);
-    // feeds3_html_more's payload is a JS object literal, not JSON — parse it as
-    // inert data (see parseQzoneCallback; never executed) rather than JSON.parse.
-    const data = parseQzoneCallback<RawFeedsResponse>(text);
+        try {
+            const body = await RequestUtil.HttpGetText(url, 'GET', '', {
+                Cookie: cookieToString(cookieObject),
+            });
+            const data = parseQzoneCallback<RawFeedsResponse>(body);
 
-    if (typeof data.code === 'number' && data.code !== 0) {
-        log.warn(
-            'getQzoneFeeds: non-zero code (uin=%s) code=%d msg=%s',
-            selfUin,
-            data.code,
-            data.message,
-        );
-        throw new Error(`qzone feeds failed: code=${data.code} ${data.message ?? ''}`.trim());
+            if (data.code !== 0 || (data.subcode !== undefined && data.subcode !== 0)) {
+                throw new Error(
+                    `qzone feeds failed: code=${data.code} subcode=${data.subcode ?? 0} ${typeof data.message === 'string' ? data.message : ''}`.trim(),
+                );
+            }
+
+            const main = data.data?.main;
+
+            if (
+                main !== undefined &&
+                (main === null || typeof main !== 'object' || Array.isArray(main))
+            ) {
+                throw new Error('空间好友动态分页信息结构异常');
+            }
+
+            if (main?.error !== undefined && main.error !== '') {
+                throw new Error('空间好友动态服务端报告拉取失败');
+            }
+
+            const result = mapFeeds(data);
+
+            if (result.has_more) {
+                if (!main) {
+                    throw new Error('空间好友动态缺少下一页游标');
+                }
+
+                state = nextQzoneFeedState(main, state);
+                const position = qzoneFeedPosition(state);
+
+                if (seen.has(position)) {
+                    throw new Error('空间好友动态分页游标未推进');
+                }
+
+                seen.add(position);
+                result.next_cursor = encodeQzoneFeedCursor(selfUin, page + 1, state);
+            }
+
+            const unavailable = result.feeds.filter(
+                (feed) => feed.appid === 311 && feed.content === null,
+            ).length;
+
+            if (unavailable) {
+                log.warn(
+                    'getQzoneFeeds content unavailable (uin=%s page=%d entries=%d)',
+                    selfUin,
+                    page,
+                    unavailable,
+                );
+            }
+
+            log.debug(
+                'getQzoneFeeds page (uin=%s page=%d entries=%d more=%s)',
+                selfUin,
+                page,
+                result.feeds.length,
+                result.has_more,
+            );
+
+            if (page === target) {
+                return result;
+            }
+
+            if (!result.has_more) {
+                return { feeds: [], has_more: false, next_cursor: null };
+            }
+        } catch (error) {
+            log.warn(
+                'getQzoneFeeds failed (uin=%s page=%d): %s',
+                selfUin,
+                page,
+                error instanceof Error ? error.message : String(error),
+            );
+            throw error;
+        }
     }
 
-    if (!Array.isArray(data.data?.data)) {
-        log.warn(
-            'getQzoneFeeds: no data array in response (uin=%s) — likely auth/cookie failure or unverified response shape; body head=%s',
-            selfUin,
-            text.slice(0, 300),
-        );
-        throw new Error(`无法获取空间好友动态（响应结构异常）: ${text.slice(0, 200)}`);
-    }
-
-    return mapFeeds(data);
+    throw new Error('空间好友动态分页未完成');
 }
 
 // ─────────────── 发说说 (publish emotion) — emotion_cgi_publish_v6 ───────────────
@@ -1356,6 +1486,19 @@ export interface QzoneCommentResult {
     comment_id: string;
 }
 
+export interface QzoneReplyTarget {
+    /** The top-level comment, even when replying to one of its replies. */
+    commentId: string;
+    commentUin: string;
+    /** Optional author to address within that thread. */
+    replyTo?: { uin: string; name: string };
+}
+
+export interface QzoneReplyResult extends QzoneCommentResult {
+    parent_comment_id: string;
+    parent_comment_uin: number;
+}
+
 /**
  * Comment on a 说说 (`tid`, owned by `hostUin`) as the bot (`selfUin`) via
  * taotao.qzone.qq.com's emotion_cgi_re_feeds CGI (proxied through
@@ -1542,6 +1685,154 @@ export async function commentQzoneMsg(
 
     const commentId = data.commentid ?? data.commentId;
     return { comment_id: commentId !== undefined ? String(commentId) : '' };
+}
+
+/**
+ * Reply within a Qzone comment thread. The web comment module uses a separate
+ * reply endpoint: commentId/commentUin identify the parent, not a nested reply.
+ * The addressed author is an automatic mention in content; there is no replyId
+ * request field. Images are not part of this request's supported contract.
+ * Request/result contract: qzonestyle.gtimg.cn/qzone/app/controls/commentModule/
+ * viewModel/viewModel_3.0_common.js (ReplyViewModel.post).
+ */
+export async function replyQzoneComment(
+    cookieObject: Record<string, string>,
+    selfUin: string,
+    hostUin: string,
+    tid: string,
+    content: string,
+    target: QzoneReplyTarget,
+): Promise<QzoneReplyResult> {
+    if (!cookieObject || typeof cookieObject !== 'object') {
+        throw new Error('cookieObject is required');
+    }
+
+    for (const [field, value] of Object.entries({
+        selfUin,
+        hostUin,
+        commentUin: target.commentUin,
+    })) {
+        if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+            throw new Error(`${field} must be a positive safe integer`);
+        }
+    }
+
+    if (!tid.trim() || !content.trim() || !target.commentId.trim()) {
+        throw new Error('tid, content and commentId must not be blank');
+    }
+
+    let replyContent = content;
+
+    if (target.replyTo !== undefined) {
+        const { uin, name } = target.replyTo;
+
+        if (!/^[1-9]\d*$/.test(uin) || !Number.isSafeInteger(Number(uin)) || !name.trim()) {
+            throw new Error('replyTo requires a positive safe integer uin and a non-blank name');
+        }
+
+        // Match the web editor's mention encoding, not HTML or URL encoding.
+        const escapedName = name
+            .trim()
+            .replace(/%/g, '%25')
+            .replace(/,/g, '%2C')
+            .replace(/}/g, '%7D');
+        replyContent = `@{uin:${uin},nick:${escapedName},auto:1} ${content}`;
+    }
+
+    const bkn = getBknFromCookie(cookieObject);
+    const url = `https://h5.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_addreply_ugc?g_tk=${bkn}`;
+    const body = new URLSearchParams({
+        uin: selfUin,
+        hostUin,
+        hostuin: selfUin,
+        topicId: `${hostUin}_${tid}`,
+        commentId: target.commentId,
+        commentUin: target.commentUin,
+        content: replyContent,
+        inCharset: 'utf-8',
+        outCharset: 'utf-8',
+        ref: '',
+        code_version: '1',
+        format: 'fs',
+        qzreferrer: `https://user.qzone.qq.com/${hostUin}`,
+    }).toString();
+
+    log.debug(
+        'replyQzoneComment: posting reply (host=%s tid=%s parent=%s)',
+        hostUin,
+        tid,
+        target.commentId,
+    );
+    const text = await RequestUtil.HttpGetText(url, 'POST', body, {
+        Cookie: cookieToString(cookieObject),
+        'Content-Type': 'application/x-www-form-urlencoded',
+    });
+    const response = parseQzoneJson<unknown>(text);
+
+    if (
+        response === null ||
+        typeof response !== 'object' ||
+        Array.isArray(response) ||
+        !('code' in response) ||
+        typeof response.code !== 'number' ||
+        !Number.isInteger(response.code)
+    ) {
+        throw new Error(
+            'invalid qzone reply response: missing or invalid code; check delivery before retrying',
+        );
+    }
+
+    const subcode = 'subcode' in response ? response.subcode : undefined;
+
+    if (subcode !== undefined && (typeof subcode !== 'number' || !Number.isInteger(subcode))) {
+        throw new Error(
+            'invalid qzone reply response: invalid subcode; check delivery before retrying',
+        );
+    }
+
+    if (response.code !== 0 || (subcode !== undefined && subcode !== 0)) {
+        const message =
+            'message' in response && typeof response.message === 'string' ? response.message : '';
+        log.warn(
+            'replyQzoneComment: rejected (host=%s tid=%s parent=%s) code=%s subcode=%s',
+            hostUin,
+            tid,
+            target.commentId,
+            response.code,
+            subcode,
+        );
+        throw new Error(
+            `qzone reply failed: code=${response.code} subcode=${subcode ?? 0} ${message}`.trim(),
+        );
+    }
+
+    const data = 'data' in response ? response.data : undefined;
+    const id =
+        data !== null && typeof data === 'object' && !Array.isArray(data) && 'id' in data
+            ? data.id
+            : undefined;
+
+    if (!(
+        (typeof id === 'string' && id.trim() !== '') ||
+        (typeof id === 'number' && Number.isSafeInteger(id) && id >= 0)
+    )) {
+        throw new Error(
+            'qzone reply accepted but returned an invalid reply ID; check delivery before retrying',
+        );
+    }
+
+    log.debug(
+        'replyQzoneComment: accepted (host=%s tid=%s parent=%s reply=%s)',
+        hostUin,
+        tid,
+        target.commentId,
+        id,
+    );
+    return {
+        comment_id: String(id),
+        parent_comment_id: target.commentId,
+        parent_comment_uin: Number(target.commentUin),
+    };
 }
 
 // ─────── 改说说权限 (update right) — emotion_cgi_msgdetail_v6 + emotion_cgi_update ───────
@@ -1844,11 +2135,16 @@ export async function getQzoneMsgDetail(
         comments: detailList(data.commentlist, 'commentlist').map((value, index) => {
             const field = `commentlist[${index}]`;
             const comment = detailObject(value, field);
+            const mappedComment = mapQzoneComment(comment, field);
             return {
-                ...mapQzoneComment(comment, field),
+                ...mappedComment,
                 replies: detailList(comment.list_3, `${field}.list_3`).map((reply, replyIndex) => {
                     const replyField = `${field}.list_3[${replyIndex}]`;
-                    return mapQzoneComment(detailObject(reply, replyField), replyField);
+                    return {
+                        ...mapQzoneComment(detailObject(reply, replyField), replyField),
+                        parent_comment_id: mappedComment.comment_id,
+                        parent_comment_uin: mappedComment.uin,
+                    };
                 }),
             };
         }),

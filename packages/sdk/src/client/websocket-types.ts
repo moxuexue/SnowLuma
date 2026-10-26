@@ -1,4 +1,4 @@
-import type { ApiResponse, SnowLumaClientOptions, SnowLumaEvent, WsRole } from '../types/index';
+import type { ApiResponse, SnowLumaClientOptions, SnowLumaEvent, WsRole } from '../types/index.js';
 
 export interface WebSocketLike {
     readyState: number;
@@ -38,6 +38,14 @@ export interface SnowLumaWebSocketClientOptions extends SnowLumaClientOptions {
     webSocket?: WebSocketConstructor;
     /** Enables or configures automatic reconnect after unexpected close. */
     reconnect?: boolean | ReconnectOptions;
+}
+
+/** Controls one wait for a future event, without opening a connection. */
+export interface EventWaitOptions {
+    /** Defaults to the client's requestTimeoutMs. Set to 0 to wait without a deadline. */
+    timeoutMs?: number;
+    /** Cancels the wait without closing the connection. */
+    signal?: AbortSignal;
 }
 
 export interface WebSocketCloseInfo {

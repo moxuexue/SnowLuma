@@ -1,10 +1,14 @@
-import { createSnowLumaApiError } from '../errors';
-import { normalizeMessage } from '../messages/index';
+import { createSnowLumaApiError, SnowLumaConnectionError } from '../errors.js';
+import { normalizeMessage } from '../messages/index.js';
+import { downloadFileStream, uploadFileStream } from './file-streams.js';
+import { sendUploadedMedia } from './media.js';
 import type {
     ActionParams,
     ActionResult,
     ApiResponse,
     DomainParams,
+    DownloadFileStreamOptions,
+    DownloadFileStreamParams,
     DownloadFileParams,
     ForwardMessageParams,
     GetForwardMsgParams,
@@ -14,12 +18,23 @@ import type {
     GetMediaParams,
     JsonObject,
     JsonValue,
+    MediaSource,
     OutgoingMessage,
     RequestOptions,
+    SendFileOptions,
+    SendGroupFileOptions,
+    SendImageOptions,
+    SendRecordOptions,
+    SendVideoOptions,
     SendMsgParams,
     SetGroupReactionParams,
     SnowLumaAction,
-} from '../types/index';
+    SnowLumaStreamAction,
+    StreamApiResponse,
+    StreamRequestOptions,
+    UploadFileSource,
+    UploadFileStreamOptions,
+} from '../types/index.js';
 
 /**
  * Base class for SnowLuma API clients.
@@ -34,6 +49,41 @@ export abstract class SnowLumaApiClient {
         params?: ActionParams<TAction>,
         options?: RequestOptions,
     ): Promise<ApiResponse<ActionResult<TAction>>>;
+
+    /** Returns every stream envelope, including a terminal failed response.
+     * Custom request-only subclasses remain valid and can opt into streaming. */
+    requestStream<TAction extends SnowLumaStreamAction>(
+        _action: TAction,
+        _params: ActionParams<TAction>,
+        _options?: StreamRequestOptions,
+    ): AsyncIterableIterator<StreamApiResponse<ActionResult<TAction>>> {
+        throw new SnowLumaConnectionError('This client transport does not implement streaming');
+    }
+
+    /** Returns every stream payload; failed responses throw SnowLumaApiError. */
+    async *stream<TAction extends SnowLumaStreamAction>(
+        action: TAction,
+        params: ActionParams<TAction>,
+        options?: StreamRequestOptions,
+    ): AsyncGenerator<ActionResult<TAction>, void, void> {
+        for await (const response of this.requestStream(action, params, options)) {
+            if (response.status !== 'ok' || response.retcode !== 0) {
+                throw createSnowLumaApiError(response);
+            }
+
+            yield response.data;
+        }
+    }
+
+    /** Uploads bytes incrementally and returns the server's completed file metadata. */
+    uploadFileStream(source: UploadFileSource, options?: UploadFileStreamOptions) {
+        return uploadFileStream(this, source, options);
+    }
+
+    /** Yields decoded byte chunks; the iterator's return value is completion metadata. */
+    downloadFileStream(params: DownloadFileStreamParams, options?: DownloadFileStreamOptions) {
+        return downloadFileStream(this, params, options);
+    }
 
     /** Sends a OneBot action and returns data, throwing SnowLumaApiError on failed responses. */
     async call<TAction extends SnowLumaAction>(
@@ -110,6 +160,132 @@ export abstract class SnowLumaApiClient {
                 auto_escape: options?.autoEscape,
             },
             options,
+        );
+    }
+
+    /** Uploads local bytes, then sends an image message using the server's file path. */
+    sendGroupImage(groupId: number, source: MediaSource, options: SendImageOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendGroupMessage(
+                groupId,
+                { type: 'image', data: { ...options.image, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes, then sends a record message using the server's file path. */
+    sendGroupRecord(groupId: number, source: MediaSource, options: SendRecordOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendGroupMessage(
+                groupId,
+                { type: 'record', data: { ...options.record, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes, then sends a video message using the server's file path. */
+    sendGroupVideo(groupId: number, source: MediaSource, options: SendVideoOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendGroupMessage(
+                groupId,
+                { type: 'video', data: { ...options.video, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes, then sends an image message using the server's file path. */
+    sendPrivateImage(userId: number, source: MediaSource, options: SendImageOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendPrivateMessage(
+                userId,
+                { type: 'image', data: { ...options.image, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes, then sends a record message using the server's file path. */
+    sendPrivateRecord(userId: number, source: MediaSource, options: SendRecordOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendPrivateMessage(
+                userId,
+                { type: 'record', data: { ...options.record, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes, then sends a video message using the server's file path. */
+    sendPrivateVideo(userId: number, source: MediaSource, options: SendVideoOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.sendPrivateMessage(
+                userId,
+                { type: 'video', data: { ...options.video, file: upload.file_path } },
+                {
+                    signal,
+                    timeoutMs,
+                    echo,
+                },
+            ),
+        );
+    }
+
+    /** Uploads local bytes and publishes a file in the group. */
+    sendGroupFile(groupId: number, source: MediaSource, options: SendGroupFileOptions = {}) {
+        const { signal, timeoutMs, echo, folder, folderId } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.uploadGroupFile(groupId, upload.file_path, {
+                signal,
+                timeoutMs,
+                echo,
+                folder,
+                folderId,
+                name: options.name ?? upload.file_name,
+                uploadFile: true,
+            }),
+        );
+    }
+
+    /** Uploads local bytes and sends the file to a private conversation. */
+    sendPrivateFile(userId: number, source: MediaSource, options: SendFileOptions = {}) {
+        const { signal, timeoutMs, echo } = options;
+        return sendUploadedMedia(this, source, options, (upload) =>
+            this.uploadPrivateFile(userId, upload.file_path, {
+                signal,
+                timeoutMs,
+                echo,
+                name: options.name ?? upload.file_name,
+                uploadFile: true,
+            }),
         );
     }
 

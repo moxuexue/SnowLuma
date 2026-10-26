@@ -77,10 +77,18 @@ describe('apis/qzone', () => {
         const bridge = mockBridge({ apis: { ...mockApiHub(), web: { getCookies } } as never });
         const feedsSpy = vi
             .spyOn(qzoneWeb, 'getQzoneFeeds')
-            .mockResolvedValue({ feeds: [], has_more: false });
+            .mockResolvedValue({ feeds: [], has_more: false, next_cursor: null });
         await new QzoneApi(bridge as never).getFeeds(3, 20);
         expect(getCookies).toHaveBeenCalledWith('qzone.qq.com');
-        expect(feedsSpy).toHaveBeenCalledWith({ p_skey: 'PSK' }, '10001', 3, 20);
+        expect(feedsSpy).toHaveBeenCalledWith({ p_skey: 'PSK' }, '10001', 3, 20, undefined);
+        await new QzoneApi(bridge as never).getFeeds(1, 20, 'opaque-cursor');
+        expect(feedsSpy).toHaveBeenLastCalledWith(
+            { p_skey: 'PSK' },
+            '10001',
+            1,
+            20,
+            'opaque-cursor',
+        );
     });
 
     it('uploadImageFromSource uploads from file:// http:// base64:// and returns richval + url', async () => {
@@ -289,5 +297,54 @@ describe('apis/qzone', () => {
             1,
             richval,
         );
+    });
+
+    it.each([undefined, 20002])(
+        'routes replies with the account cookies and post owner (%s)',
+        async (targetUin) => {
+            const getCookies = vi.fn(async () => ({ p_skey: 'PSK' }));
+            const bridge = mockBridge({ apis: { ...mockApiHub(), web: { getCookies } } as never });
+            const target = {
+                commentId: '0',
+                commentUin: '30003',
+                replyTo: { uin: '40004', name: 'Reader' },
+            };
+            const result = { comment_id: '8', parent_comment_id: '0', parent_comment_uin: 30003 };
+            const replySpy = vi.spyOn(qzoneWeb, 'replyQzoneComment').mockResolvedValue(result);
+            const commentSpy = vi.spyOn(qzoneWeb, 'commentQzoneMsg');
+
+            const out = await new QzoneApi(bridge as never).comment(
+                'TIDX',
+                'Reply',
+                targetUin,
+                undefined,
+                undefined,
+                target,
+            );
+
+            expect(out).toEqual(result);
+            expect(getCookies).toHaveBeenCalledWith('qzone.qq.com');
+            expect(replySpy).toHaveBeenCalledWith(
+                { p_skey: 'PSK' },
+                '10001',
+                String(targetUin ?? 10001),
+                'TIDX',
+                'Reply',
+                target,
+            );
+            expect(commentSpy).not.toHaveBeenCalled();
+        },
+    );
+
+    it('rejects reply images before acquiring cookies or sending', async () => {
+        const getCookies = vi.fn();
+        const bridge = mockBridge({ apis: { ...mockApiHub(), web: { getCookies } } as never });
+        await expect(
+            new QzoneApi(bridge as never).comment('TIDX', 'Reply', undefined, 1, 'URL', {
+                commentId: '0',
+                commentUin: '30003',
+            }),
+        ).rejects.toThrow('images are not supported');
+        expect(getCookies).not.toHaveBeenCalled();
     });
 });

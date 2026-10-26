@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add one-step local media sends, the optional `@snowluma/sdk/node` file source, stage-aware errors, explicit quoted replies, and cancellable WebSocket event waits; see [MESSAGING.md](MESSAGING.md). Existing methods and handler/context types remain compatible.
+- Report group-file chat publication failures through the runtime's existing error response instead of returning a successful upload result after publication fails.
+- Add HTTP and WebSocket `requestStream()` / `stream()`, incremental `uploadFileStream()` / `downloadFileStream()` helpers, cancellation, bounded response buffering, and transfer validation. Existing single-response methods remain unchanged; see [STREAMING.md](STREAMING.md).
+- Add parameter and result types for the remaining 57 actions and three aliases, covering every registered action name while preserving existing client methods and type mappings.
+- Describe album pagination and media, Qzone, flash transfers, stickers, group settings, and stream frame payloads; retain numeric-string inputs and signed message IDs.
+- Fix native Node.js ESM imports for the package root and all supported subpaths without requiring a bundler.
+- Restore `@snowluma/sdk/actions` and the root exports `SNOWLUMA_ACTIONS`, `isSnowLumaAction`, and `SnowLumaKnownAction`, including current action names and compatibility aliases.
 - Require patched Node.js releases: 24.22.1 or newer in the 24.x line, or 26.12.1 and newer.
 
 ## 2.0.0

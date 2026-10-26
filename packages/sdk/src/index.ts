@@ -1,7 +1,9 @@
-export { SnowLumaApiClient } from './client/api-client';
-export { createHttpClient, SnowLumaHttpClient } from './client/http-client';
-export type { SnowLumaHttpClientOptions } from './client/http-client';
-export { createWebSocketClient, SnowLumaWebSocketClient } from './client/websocket-client';
+export { SNOWLUMA_ACTIONS, isSnowLumaAction } from './actions.js';
+export type { SnowLumaKnownAction } from './actions.js';
+export { SnowLumaApiClient } from './client/api-client.js';
+export { createHttpClient, SnowLumaHttpClient } from './client/http-client.js';
+export type { SnowLumaHttpClientOptions } from './client/http-client.js';
+export { createWebSocketClient, SnowLumaWebSocketClient } from './client/websocket-client.js';
 export {
     createSnowLumaApiError,
     SnowLumaAbortError,
@@ -9,10 +11,11 @@ export {
     SnowLumaAuthError,
     SnowLumaConnectionError,
     SnowLumaError,
+    SnowLumaMediaSendError,
     SnowLumaParseError,
     SnowLumaTimeoutError,
     SnowLumaTransportError,
-} from './errors';
+} from './errors.js';
 export {
     createEventContext,
     isBotStatusEvent,
@@ -25,7 +28,7 @@ export {
     matchCommand,
     noticeType,
     requestType,
-} from './events/index';
+} from './events/index.js';
 export {
     at,
     atAll,
@@ -47,6 +50,7 @@ export {
     normalizeMessage,
     parseSegments,
     poke,
+    quoteMessage,
     raw,
     record,
     reply,
@@ -55,15 +59,16 @@ export {
     toCQString,
     video,
     xml,
-} from './messages/index';
+} from './messages/index.js';
 
 export type {
+    EventWaitOptions,
     ReconnectOptions,
     SnowLumaWebSocketClientOptions,
     SnowLumaWebSocketEvents,
     WebSocketCloseInfo,
     WebSocketConstructor,
-} from './client/websocket-client';
+} from './client/websocket-client.js';
 
 export type {
     CommandHandler,
@@ -76,6 +81,7 @@ export type {
     MaybePromise,
     RequestDecisionOptions,
     SnowLumaEventContext,
-} from './events/index';
+    SnowLumaEventContextWithQuote,
+} from './events/index.js';
 
-export type * from './types/index';
+export type * from './types/index.js';
