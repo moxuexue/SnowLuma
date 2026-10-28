@@ -1,7 +1,7 @@
 {
   "license": "SEE LICENSE IN LICENSE",
   "name": "@snowluma/mcp",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "MCP server exposing the SnowLuma OneBot action catalog (docs + JSON Schemas) and optional execution to LLM clients.",
   "repository": {
     "type": "git",
@@ -52,7 +52,7 @@
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "4.1.11",
+    "vitest": "4.1.12",
     "@types/ws": "^8.18.1",
     "@modelcontextprotocol/ext-apps": "^2.0.3"
   },

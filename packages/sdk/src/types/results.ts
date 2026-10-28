@@ -270,6 +270,18 @@ export type GroupAdminSettings = {
     no_code_finger_open: number;
 };
 
+export interface GroupAdminPermissions {
+    group_id: number;
+    user_id: number;
+    /** Null means the server did not specify this permission. */
+    recall_member_message: boolean | null;
+    kick_member: boolean | null;
+    /** Zero means unlimited; null means removal is disabled or unspecified. */
+    kick_member_per_day: number | null;
+    /** Whether join-verification messages are received; null means the state was not returned. */
+    receive_verify: boolean | null;
+}
+
 export interface GroupTodoListItem {
     message_id: number;
     message_seq: number;
@@ -394,6 +406,20 @@ export interface QzoneEmotion extends JsonObject {
 export interface QzoneMsgListResult extends JsonObject {
     total: number;
     msglist: QzoneEmotion[];
+}
+
+export interface QzoneProfileResult extends JsonObject {
+    name: string;
+    description: string;
+}
+
+export interface QzonePublicFeedsPage extends JsonObject {
+    /** Original feed cells, with the upstream item.feed wrapper removed. */
+    feeds: JsonObject[];
+    /** Controls pagination even when a page contains fewer than ten items. */
+    has_more: boolean;
+    /** Account-bound continuation; null when the list ends. */
+    next_cursor: string | null;
 }
 
 export interface QzoneFeed extends JsonObject {

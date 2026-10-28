@@ -43,6 +43,55 @@ export type QuickAlias = AssertTrue<
 declare const http: SnowLumaHttpClient;
 declare const ws: SnowLumaWebSocketClient;
 
+const adminPermissions = await http.raw('get_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+});
+export const adminRecall: boolean | null = adminPermissions.recall_member_message;
+export const adminKickLimit: number | null = adminPermissions.kick_member_per_day;
+export const adminReceiveVerify: boolean | null = adminPermissions.receive_verify;
+await http.raw('set_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+    recall_member_message: false,
+});
+await http.raw('set_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+    kick_member: false,
+});
+await http.raw('set_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+    kick_member: true,
+    kick_member_per_day: 0,
+});
+await http.raw('set_group_admin_receive_verify', {
+    group_id: 10001,
+    user_id: 10002,
+    enable: false,
+});
+// @ts-expect-error a patch must change a permission
+http.raw('set_group_admin_permissions', { group_id: 10001, user_id: 10002 });
+// @ts-expect-error enabling removal requires an explicit limit
+http.raw('set_group_admin_permissions', { group_id: 10001, user_id: 10002, kick_member: true });
+http.raw('set_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+    kick_member: false,
+    // @ts-expect-error a limit without enabling removal is invalid
+    kick_member_per_day: 20,
+});
+http.raw('set_group_admin_permissions', {
+    group_id: 10001,
+    user_id: 10002,
+    kick_member: true,
+    // @ts-expect-error only supported limits may be written
+    kick_member_per_day: 1,
+});
+// @ts-expect-error receive-verification enable is required
+http.raw('set_group_admin_receive_verify', { group_id: 10001, user_id: 10002 });
+
 export const uploadedFile: Promise<UploadFileStreamComplete> = http.uploadFileStream(
     new Blob(['file']),
 );
@@ -74,9 +123,11 @@ export const feedContent: string | null | undefined = feeds.feeds[0].content;
 export const feedPhotos: string[] | null | undefined = feeds.feeds[0].images;
 export const feedLikeCount: number | null | undefined = feeds.feeds[0].like_count;
 export const feedCursor: string | null | undefined = feeds.next_cursor;
+
 if (feedCursor) {
     await http.raw('get_qzone_feeds', { cursor: feedCursor, count: 10 });
 }
+
 export const legacyFeedsResult: ActionResult<'get_qzone_feeds'> = {
     feeds: [{ uin: 10002, nickname: 'User', time: 1, appid: 311, key: 'post', html: '' }],
     has_more: false,
@@ -93,6 +144,78 @@ export const legacyQzoneComment: ActionParams<'comment_qzone'> = {
     images: ['https://example.com/image.png'],
 };
 export const legacyQzoneResult: ActionResult<'comment_qzone'> = { comment_id: '' };
+const qzoneProfile = await http.raw('get_qzone_profile', actionParams.get_qzone_profile);
+export const qzoneName: string = qzoneProfile.name;
+export const qzoneDescription: string = qzoneProfile.description;
+export const ownQzoneProfile = http.raw('get_qzone_profile', {});
+export const qzoneProfileUpdate: Promise<null> = ws.raw('set_qzone_profile', {
+    name: 'Space',
+    description: '',
+});
+export const qzoneNameOnly: ActionParams<'set_qzone_profile'> = { name: 'Space' };
+export const qzoneDescriptionOnly: ActionParams<'set_qzone_profile'> = { description: '' };
+export const qzoneScalarFields: ActionParams<'set_qzone_profile'> = {
+    name: 123,
+    description: false,
+};
+// @ts-expect-error a space profile patch requires at least one field
+export const emptyQzoneProfilePatch: ActionParams<'set_qzone_profile'> = {};
+export const invalidQzoneProfilePatch: ActionParams<'set_qzone_profile'> = {
+    // @ts-expect-error profile fields accept string, number or boolean primitives
+    description: [],
+};
+const publicPage = await http.raw('get_qzone_public_feeds', {});
+export const publicCells: JsonObject[] = publicPage.feeds;
+export const publicHasMore: boolean = publicPage.has_more;
+export const publicCursor: string | null = publicPage.next_cursor;
+
+if (publicPage.has_more && publicPage.next_cursor) {
+    await http.raw('get_qzone_public_feeds', { cursor: publicPage.next_cursor });
+}
+
+declare const publicFeed: JsonObject;
+declare const publicComment: JsonObject;
+export const publicReplyDefaults: ActionParams<'get_qzone_public_replies'> = {
+    feed: publicFeed,
+    comment: publicComment,
+};
+export const publicUpvoteDefault: ActionParams<'set_qzone_public_upvote'> = { feed: publicFeed };
+export const publicLikeDefault: ActionParams<'set_qzone_public_like'> = { feed: publicFeed };
+export const publicFollowDefault: ActionParams<'set_qzone_public_follow'> = { feed: publicFeed };
+export const publicCommentLikeDefault: ActionParams<'set_qzone_public_comment_like'> = {
+    feed: publicFeed,
+    comment: publicComment,
+};
+export const publicReplyLike: ActionParams<'set_qzone_public_comment_like'> = {
+    feed: publicFeed,
+    comment: publicComment,
+    reply: { id: '18446744073709551615', like: { id: 'reply-like-key' } },
+    enable: false,
+};
+export const publicReplyToComment: ActionParams<'reply_qzone_public_feed'> = {
+    feed: publicFeed,
+    comment: publicComment,
+    content: 'Reply',
+};
+export const publicForwardDefault: ActionParams<'forward_qzone_public_feed'> = { feed: publicFeed };
+export const publicReplyResult: JsonObject = await ws.raw(
+    'reply_qzone_public_feed',
+    actionParams.reply_qzone_public_feed,
+);
+// @ts-expect-error follow-up comments require attach_info as the cursor
+export const publicCommentsWithoutCursor: ActionParams<'get_qzone_public_comments'> = {
+    feed: publicFeed,
+};
+export const invalidPublicContent: ActionParams<'comment_qzone_public_feed'> = {
+    feed: publicFeed,
+    // @ts-expect-error public content does not coerce numeric primitives
+    content: 123,
+};
+export const invalidPublicRichItems: ActionParams<'comment_qzone_public_feed'> = {
+    feed: publicFeed,
+    // @ts-expect-error rich-text arrays contain JSON objects, not strings
+    content: ['text'],
+};
 const speech = await ws.raw('get_record_text', { message_id: -42 });
 const transcription: string = speech.text;
 const flash = await http.raw('get_fileset_info', { fileset_id: 'files' });

@@ -144,6 +144,21 @@ const response = await bot.rawResponse('get_status');
 
 `raw` 会在 SnowLuma 返回 `status: "failed"` 或非零 `retcode` 时抛出 `SnowLumaApiError`；`rawResponse` 会保留完整响应。
 
+### 读取与修改空间资料
+
+`get_qzone_profile` 返回 QQ 空间的名称和说明；这两个字段独立于 QQ 昵称和个性签名。
+
+```ts
+const profile = await bot.raw('get_qzone_profile', {}); // 当前账号
+console.log(profile.name, profile.description);
+await bot.raw('get_qzone_profile', { target_uin: '10002' });
+
+await bot.raw('set_qzone_profile', { name: '我的空间' });
+await bot.raw('set_qzone_profile', { description: '' }); // 清空说明
+```
+
+`set_qzone_profile` 只修改当前账号，至少提供 `name`、`description` 中的一项；省略字段保持原值，空字符串表示清空。成功返回 `null`，登录失效、访问受限或上游要求验证时会抛出 `SnowLumaApiError`。修改后可再次读取资料确认结果。
+
 ### 读取空间说说评论
 
 `get_qzone_msg_detail` 是只读扩展动作，`raw` 提供参数和结果类型：
@@ -165,6 +180,89 @@ for (const comment of detail.comments) {
 `comment_num` 是服务端报告的总数，`comments` 是本页一级评论；`num` 范围为 1–100，实际返回数量可能更少。二级回复不单独分页，`replies` 不保证完整。评论 ID 在所属说说内唯一，二级回复 ID 在父评论内唯一；时间均为 Unix 秒，正文保留空间表情和 @ 标记。该接口复用当前账号的空间登录态，登录或访问权限失败会抛出 `SnowLumaApiError`。
 
 分页参数及 `commentlist` / `list_3` 字段参考 [Qzone-API](https://github.com/SmartHypercube/Qzone-API/blob/master/qzone.py)。实际分页和可见内容取决于 QQ 空间服务端。
+
+### 空友爱看与公共空间
+
+公共空间动作使用推荐域 `3` 的 JSON 接口，与上面的旧空间 CGI 动作分开。先读取 `get_qzone_public_feeds`，再把返回的完整 `feed` 对象传给详情和互动动作，保留其中的身份、传递数据及未知字段；不要用旧说说 `tid` 拼造。
+
+| 动作 | 主要参数 |
+| --- | --- |
+| `get_qzone_public_capabilities` | 无；读取当前账号的入口能力 |
+| `get_qzone_public_feeds` | 可选 `cursor` |
+| `get_qzone_public_feed_detail` | `feed` |
+| `get_qzone_public_comments` | `feed`、`cursor` |
+| `get_qzone_public_replies` | `feed`、完整 `comment`，可选 `cursor`、`page_size`（默认 20） |
+| `set_qzone_public_upvote` / `set_qzone_public_like` / `set_qzone_public_follow` | `feed`，可选 `enable`（默认 `true`，`false` 取消） |
+| `set_qzone_public_comment_like` | `feed`、完整 `comment`，可选完整 `reply`、`enable`（默认 `true`） |
+| `comment_qzone_public_feed` | `feed`、`content` |
+| `reply_qzone_public_feed` | `feed`、完整 `comment`、`content`，可选完整 `reply` |
+| `delete_qzone_public_comment` / `delete_qzone_public_reply` | `feed`、完整 `comment`；删除回复还需完整 `reply` |
+| `forward_qzone_public_feed` | `feed`，可选 `reason`（默认空字符串） |
+
+“推”与“赞”是不同的互动，分别使用 `set_qzone_public_upvote` 和 `set_qzone_public_like`。评论或回复的 `content` 接受非空文本或非空的上游富文本对象数组。详情、评论、回复及写操作保留上游结果字段，`raw` 返回这些 JSON 对象；列表的 `feeds` 已去掉上游每项的 `.feed` 包装，其余字段保持开放。
+
+QQ 上游会对评论换行做归一化，返回的富文本保持上游格式。
+
+`set_qzone_public_comment_like` 为评论点赞；提供 `reply` 时改为给该回复点赞，`enable: false` 取消。保留评论或回复自带的 `like.id`，不要将它替换成评论 ID。
+
+```ts
+const page = await bot.raw('get_qzone_public_feeds', {});
+if (page.has_more && page.next_cursor) {
+  const next = await bot.raw('get_qzone_public_feeds', { cursor: page.next_cursor });
+  console.log(next.feeds);
+}
+
+const feed = page.feeds[0];
+if (feed) {
+  const detail = await bot.raw('get_qzone_public_feed_detail', { feed });
+  if (detail.has_more === true && typeof detail.attach_info === 'string') {
+    const comments = await bot.raw('get_qzone_public_comments', {
+      feed,
+      cursor: detail.attach_info,
+    });
+    console.log(comments);
+  }
+}
+```
+
+列表续页必须原样传回 `next_cursor`，根据 `has_more` 判断结束，不能因本页不足 10 条而停止。详情中的首批评论位于 `feed.feed.cell_comment.comments`；后续评论使用详情或上一评论页的 `attach_info` 作为 `cursor`。读取回复时，首次可省略 `cursor` 使用完整评论自带的 `reply_attach_info`，之后传上一回复页的 `reply_attach_info`。这些游标各有用途，列表游标还绑定当前账号。登录或访问权限失败会抛出 `SnowLumaApiError`。
+
+### 单个管理员权限
+
+`set_group_admin` 用于授予或取消管理员身份。对已有管理员，可通过以下动作读取或修改权限；调用账号需要具有 QQ 服务端要求的管理权限。
+
+| 动作 | 参数与结果 |
+| --- | --- |
+| `get_group_admin_permissions` | `group_id`、`user_id`；返回撤回权限、移除权限、每日移除上限和接收验证消息状态 |
+| `set_group_admin_permissions` | `group_id`、`user_id`，以及至少一个 `recall_member_message` / `kick_member` |
+| `set_group_admin_receive_verify` | `group_id`、`user_id`、必填 `enable`；独立设置接收加群验证消息 |
+
+```ts
+await bot.raw('set_group_admin_permissions', {
+  group_id: 123456,
+  user_id: 10001,
+  recall_member_message: false,
+  kick_member: true,
+  kick_member_per_day: 20,
+});
+
+const permissions = await bot.raw('get_group_admin_permissions', {
+  group_id: 123456,
+  user_id: 10001,
+});
+
+await bot.raw('set_group_admin_receive_verify', {
+  group_id: 123456,
+  user_id: 10001,
+  enable: false,
+});
+```
+
+只修改显式提供的权限。开启移除权限必须明确提供 `kick_member_per_day`，支持 `0`、`5`、`10`、`20`、`50`、`100`、`200`，其中 `0` 表示不限。修改上限也须同时传 `kick_member: true`；关闭或省略移除权限时不能提供上限。SDK 的 `kick_member` 使用布尔值，以便类型检查约束上限。
+
+读取结果包含 `group_id`、`user_id`、`recall_member_message`、`kick_member`、`kick_member_per_day`、`receive_verify`。`receive_verify` 表示是否接收加群验证消息。服务器未返回或未指定的状态为 `null`；移除权限关闭或未指定时，上限也为 `null`。各项来自独立查询，不保证同一时刻的状态；任何查询失败都会报错。
+
+两个写动作分别发送一次请求，不自动重试或授予管理员身份。权限写入成功表示服务器确认请求；接收验证消息写入还会核对响应中的群号和成功管理员列表。两者均返回 `null`。完整的客户端显示和实际权限效果仍需真实 QQ 验证，不能以接口成功替代验收。
 
 ## Message Builder
 

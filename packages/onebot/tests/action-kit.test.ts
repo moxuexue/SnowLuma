@@ -114,6 +114,89 @@ describe('f.array(...).nonEmpty — per-element + non-empty', () => {
     });
 });
 
+describe('f.object — open JSON object', () => {
+    const spec = defineAction({
+        name: 't',
+        params: { value: f.object() },
+        run: () => okResponse(),
+    });
+
+    it('preserves nested and unknown fields', () => {
+        const value = { identity: { id: 'opaque' }, future: [1, null, { enabled: true }] };
+        expect(expectOk(spec.parse({ value })).value).toBe(value);
+        expect(f.object().toJsonSchema()).toEqual({ type: 'object', additionalProperties: true });
+    });
+
+    it.each([null, [], 'text', 1, false])('rejects non-object %j', (value) => {
+        expect(expectErr(spec.parse({ value })).field).toBe('value');
+    });
+
+    it('uses the normal required and optional field policies', () => {
+        expect(expectErr(spec.parse({})).reason).toBe('is required');
+        const optional = defineAction({
+            name: 't',
+            params: { value: f.object().optional() },
+            run: () => okResponse(),
+        });
+        expect(expectOk(optional.parse({}))).toEqual({ value: undefined });
+        expect(expectErr(optional.parse({ value: null })).field).toBe('value');
+    });
+});
+
+describe('f.textOrObjectArray — literal text and upstream rich items', () => {
+    const spec = defineAction({
+        name: 't',
+        params: { content: f.textOrObjectArray() },
+        run: () => okResponse(),
+    });
+
+    it.each(['[]', '[1,2]', '[{"type":0,"content":"hello"}]', ' \n中文 '])(
+        'preserves literal string %j without decoding or trimming it',
+        (content) => {
+            expect(expectOk(spec.parse({ content })).content).toBe(content);
+        },
+    );
+
+    it('preserves the original object array and unknown fields', () => {
+        const content = [{ type: 0, content: 'hello', future: { values: [null, 1] } }];
+        expect(expectOk(spec.parse({ content })).content).toBe(content);
+    });
+
+    it.each(
+        ['', [], null, 1, false, {}, [null], [1], [[]], [{ type: 0 }, 'text']].map((content) => ({
+            content,
+        })),
+    )('rejects invalid rich content $content at the named field', ({ content }) => {
+        expect(expectErr(spec.parse({ content })).field).toBe('content');
+    });
+
+    it('retains required and optional field policies', () => {
+        expect(expectErr(spec.parse({})).reason).toBe('is required');
+        const optional = defineAction({
+            name: 't',
+            params: { content: f.textOrObjectArray().optional() },
+            run: () => okResponse(),
+        });
+        expect(expectOk(optional.parse({}))).toEqual({ content: undefined });
+        expect(expectErr(optional.parse({ content: null })).field).toBe('content');
+    });
+
+    it('describes text and object arrays without OneBot message semantics', () => {
+        const field = f.textOrObjectArray();
+        expect(field.doc.type).toBe('string | object[]');
+        expect(field.toJsonSchema()).toEqual({
+            anyOf: [
+                { type: 'string', minLength: 1 },
+                {
+                    type: 'array',
+                    minItems: 1,
+                    items: { type: 'object', additionalProperties: true },
+                },
+            ],
+        });
+    });
+});
+
 describe('f.message — union passthrough + JSON-array string', () => {
     const spec = defineAction({ name: 't', params: { m: f.message() }, run: () => okResponse() });
     it('parses a JSON-array string, passes plain string / array through', () => {

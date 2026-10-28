@@ -3,6 +3,14 @@ import { protobuf_decode, protobuf_encode } from '@snowluma/proton';
 import type { OidbBase, OidbSvcTrpcTcp0x88D_0Response } from '@snowluma/proto-defs/oidb';
 import type { OidbGetGroupExtResp } from '@snowluma/proto-defs/oidb-actions/group-ext';
 import type {
+    GetGroupAdminPermissionsResponse,
+    GetGroupAdminReceiveVerifyResponse,
+    SetGroupAdminPermissionsRequest,
+    SetGroupAdminReceiveVerifyRequest,
+    SetGroupAdminReceiveVerifyResponse,
+} from '@snowluma/proto-defs/oidb-actions/group-admin-permissions';
+import type { BridgeContext } from '../../src/bridge/bridge-context';
+import type {
     Oidb0x8a0Req,
     Oidb0x8a7Resp,
     Oidb0x89a_0AddOption,
@@ -113,6 +121,160 @@ function packRobotExt(robotMemberSwitch?: number, robotMemberExamine?: number) {
 }
 
 describe('apis/group-admin', () => {
+    it.each([
+        [0, true],
+        [64, false],
+        [undefined, null],
+    ] as const)(
+        'maps receive-verification state %s without inventing missing permissions',
+        async (flag, enabled) => {
+            const bridge = mockBridge();
+            bridge.sendRawPacket.mockResolvedValueOnce(
+                packResponse(
+                    protobuf_encode<OidbBase<GetGroupAdminPermissionsResponse>>({
+                        body: {
+                            groupCode: 12345n,
+                            members: [
+                                {
+                                    memberUin: 67890n,
+                                    ext: { permissions: { items: [{ item: 1, value: 2 }] } },
+                                },
+                            ],
+                        },
+                    }),
+                ),
+            );
+            bridge.sendRawPacket.mockResolvedValueOnce(
+                packResponse(
+                    protobuf_encode<OidbBase<GetGroupAdminReceiveVerifyResponse>>({
+                        body: {
+                            groupCode: 12345n,
+                            members: [
+                                {
+                                    identity: { uid: 'resolved-uid', uin: 67890n },
+                                    memberFlagExt: flag,
+                                },
+                            ],
+                        },
+                    }),
+                ),
+            );
+            await expect(
+                new GroupAdminApi(bridge as unknown as BridgeContext).getAdminPermissions(
+                    12345,
+                    67890,
+                ),
+            ).resolves.toEqual({
+                group_id: 12345,
+                user_id: 67890,
+                recall_member_message: null,
+                kick_member: false,
+                kick_member_per_day: null,
+                receive_verify: enabled,
+            });
+            expect(bridge.sendRawPacket).toHaveBeenCalledTimes(2);
+            expect(bridge.resolveUserUid).toHaveBeenCalledExactlyOnceWith(67890, 12345);
+        },
+    );
+
+    it.each(['OidbSvcTrpcTcp.0x9164_2', 'OidbSvcTrpcTcp.0xfe7_4'])(
+        'rejects the combined snapshot when %s fails',
+        async (failedCommand) => {
+            const bridge = mockBridge();
+            bridge.sendRawPacket.mockImplementation(async (command: string) => {
+                if (command === failedCommand) {
+                    return packOidbFail(1287);
+                }
+
+                if (command === 'OidbSvcTrpcTcp.0x9164_2') {
+                    return packResponse(
+                        protobuf_encode<OidbBase<GetGroupAdminPermissionsResponse>>({
+                            body: { groupCode: 12345n, members: [{ memberUin: 67890n }] },
+                        }),
+                    );
+                }
+
+                return packResponse(
+                    protobuf_encode<OidbBase<GetGroupAdminReceiveVerifyResponse>>({
+                        body: {
+                            groupCode: 12345n,
+                            members: [{ identity: { uid: 'resolved-uid' }, memberFlagExt: 0 }],
+                        },
+                    }),
+                );
+            });
+            await expect(
+                new GroupAdminApi(bridge as unknown as BridgeContext).getAdminPermissions(
+                    12345,
+                    67890,
+                ),
+            ).rejects.toThrow('OIDB error 1287');
+            expect(bridge.sendRawPacket).toHaveBeenCalledTimes(2);
+        },
+    );
+
+    it('propagates identity resolution failures when reading administrator permissions', async () => {
+        const bridge = mockBridge();
+        bridge.resolveUserUid.mockRejectedValueOnce(new Error('identity unavailable'));
+        bridge.sendRawPacket.mockResolvedValueOnce(
+            packResponse(
+                protobuf_encode<OidbBase<GetGroupAdminPermissionsResponse>>({
+                    body: { groupCode: 12345n, members: [{ memberUin: 67890n }] },
+                }),
+            ),
+        );
+        await expect(
+            new GroupAdminApi(bridge as unknown as BridgeContext).getAdminPermissions(12345, 67890),
+        ).rejects.toThrow('identity unavailable');
+        expect(bridge.sendRawPacket).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes administrator capabilities and receive-verification through separate services', async () => {
+        const bridge = mockBridge();
+        const api = new GroupAdminApi(bridge as unknown as BridgeContext);
+        await api.setAdminPermissions(12345, 67890, { recallMemberMessage: false });
+        const [permissionCmd, permissionBytes] = bridge.sendRawPacket.mock.calls[0]!;
+        expect(permissionCmd).toBe('OidbSvcTrpcTcp.0x9c1c_2');
+        expect(
+            protobuf_decode<OidbBase<SetGroupAdminPermissionsRequest>>(permissionBytes).body,
+        ).toEqual({
+            groupCode: 12345n,
+            memberUin: 67890n,
+            permissions: [{ item: 2, value: 2, extra: null }],
+        });
+
+        bridge.sendRawPacket.mockResolvedValueOnce(
+            packResponse(
+                protobuf_encode<OidbBase<SetGroupAdminReceiveVerifyResponse>>({
+                    body: { groupCode: 12345n, result: { successfulUins: [67890n] } },
+                }),
+            ),
+        );
+        await api.setAdminReceiveVerify(12345, 67890, false);
+        const [verifyCmd, verifyBytes] = bridge.sendRawPacket.mock.calls[1]!;
+        expect(verifyCmd).toBe('OidbSvcTrpcTcp.0x904_1');
+        expect(
+            protobuf_decode<OidbBase<SetGroupAdminReceiveVerifyRequest>>(verifyBytes).body,
+        ).toEqual({
+            groupCode: 12345n,
+            operation: { adminUins: [67890n], authority: 1, operate: 0 },
+        });
+        expect(bridge.sendRawPacket).toHaveBeenCalledTimes(2);
+        expect(bridge.resolveUserUid).not.toHaveBeenCalled();
+    });
+
+    it('does not swallow an unconfirmed receive-verification response', async () => {
+        const bridge = mockBridge();
+        await expect(
+            new GroupAdminApi(bridge as unknown as BridgeContext).setAdminReceiveVerify(
+                12345,
+                67890,
+                true,
+            ),
+        ).rejects.toThrow('missing or mismatched group');
+        expect(bridge.sendRawPacket).toHaveBeenCalledTimes(1);
+    });
+
     it('muteMember resolves UID and dispatches 0x1253_1', async () => {
         const bridge = mockBridge();
         await new GroupAdminApi(bridge as any).muteMember(12345, 67890, 600);

@@ -8,10 +8,37 @@ const fileset = { fileset_id: 'fileset' };
 const flashFile = { ...fileset, file_name: 'file.txt', file_index: '0' };
 const peer = { group_id: '10001', user_id: '10002', phone_number: '' };
 const qzoneLike = { tid: 'post', target_uin: '10002', abstime: '1700000000' };
+const qzonePublicFeed = {
+    cell_common: {
+        domain_type: 3,
+        union_id: { uf_key: '9007199254740993', unknown_identity: 'preserved' },
+    },
+    cell_feed_transfer: { opaque: 'fixture' },
+    unknown_cell: { decimal: '18446744073709551615' },
+};
+const qzonePublicComment = {
+    id: '9007199254740993',
+    user: { uid: 'public-reader' },
+    like: { id: 'comment-like-key' },
+};
+const qzonePublicReply = {
+    id: '18446744073709551615',
+    user: { uid: 'public-author' },
+    like: { id: 'reply-like-key' },
+};
 
 // The same examples are compiled against the published declarations and parsed
 // by the real server action definitions. They never invoke QQ or perform I/O.
 export const actionParams = {
+    get_group_admin_permissions: { group_id: '10001', user_id: '10002' },
+    set_group_admin_permissions: {
+        group_id: '10001',
+        user_id: '10002',
+        recall_member_message: false,
+        kick_member: true,
+        kick_member_per_day: '20',
+    },
+    set_group_admin_receive_verify: { group_id: '10001', user_id: '10002', enable: 'on' },
     _get_friend_dress: { user_id: '10002' },
     add_custom_face: { file: 'file:///fixture.png' },
     cancel_group_album_media_like: mediaLike,
@@ -26,6 +53,10 @@ export const actionParams = {
         reply_uin: '10004',
         reply_name: 'Reader',
     },
+    comment_qzone_public_feed: {
+        feed: qzonePublicFeed,
+        content: [{ type: 0, content: 'Comment', upstream_option: true }],
+    },
     create_flash_task: {
         files: ['file:///one', { file: 'file:///two', name: 'two.txt' }],
         name: 'Files',
@@ -35,6 +66,12 @@ export const actionParams = {
     delete_custom_face: { emoji_id: 'face' },
     delete_flash_file: fileset,
     delete_qzone_msg: { tid: 'post' },
+    delete_qzone_public_comment: { feed: qzonePublicFeed, comment: qzonePublicComment },
+    delete_qzone_public_reply: {
+        feed: qzonePublicFeed,
+        comment: qzonePublicComment,
+        reply: qzonePublicReply,
+    },
     do_group_album_comment: { ...album, lloc: 'photo', content: 'Comment' },
     download_file_image_stream: download,
     download_file_record_stream: download,
@@ -42,6 +79,7 @@ export const actionParams = {
     download_fileset: flashFile,
     fetch_custom_face_detail: { count: '48' },
     fetch_ptt_text: { message_id: -42 },
+    forward_qzone_public_feed: { feed: qzonePublicFeed, reason: '' },
     get_ptt_text: { message_id: '-42' },
     get_record_text: { message_id: -42 },
     get_doubt_friends_add_request: { count: '50' },
@@ -56,6 +94,17 @@ export const actionParams = {
     get_qun_album_list: { group_id: '10001', attach_info: '' },
     get_qzone_feeds: { page_num: '1', count: '10', cursor: 'cursor-from-previous-response' },
     get_qzone_msg_list: { target_uin: '10002', pos: '0', num: '20' },
+    get_qzone_profile: { target_uin: '10002' },
+    get_qzone_public_capabilities: {},
+    get_qzone_public_comments: { feed: qzonePublicFeed, cursor: 'comments-from-detail' },
+    get_qzone_public_feed_detail: { feed: qzonePublicFeed },
+    get_qzone_public_feeds: { cursor: 'public-feed-cursor' },
+    get_qzone_public_replies: {
+        feed: qzonePublicFeed,
+        comment: qzonePublicComment,
+        cursor: '',
+        page_size: '20',
+    },
     get_rkey_server: {},
     get_share_link: fileset,
     like_qzone: qzoneLike,
@@ -63,6 +112,12 @@ export const actionParams = {
     modify_custom_face: { emoji_id: 'face', desc: 'Description' },
     move_custom_face_to_front: { emoji_id: 'face' },
     rename_flash_file: { ...fileset, new_name: 'new.txt' },
+    reply_qzone_public_feed: {
+        feed: qzonePublicFeed,
+        comment: qzonePublicComment,
+        content: 'Reply',
+        reply: qzonePublicReply,
+    },
     request_decrypt_key: { db_path: '/fixture.db' },
     send_ark_share: peer,
     send_flash_msg: { ...fileset, group_id: '10001', user_id: '10002' },
@@ -99,6 +154,16 @@ export const actionParams = {
     },
     set_qzone_ban: { user_id: '10002', enable: false },
     set_qzone_msg_right: { tid: 'post', ugc_right: '128', target_uins: ['10002'] },
+    set_qzone_profile: { name: 'Space', description: '' },
+    set_qzone_public_follow: { feed: qzonePublicFeed, enable: 'off' },
+    set_qzone_public_comment_like: {
+        feed: qzonePublicFeed,
+        comment: qzonePublicComment,
+        reply: qzonePublicReply,
+        enable: 'on',
+    },
+    set_qzone_public_like: { feed: qzonePublicFeed, enable: 0 },
+    set_qzone_public_upvote: { feed: qzonePublicFeed, enable: true },
     share_group_ex: { group_id: '10001' },
     share_peer: peer,
     test_download_stream: { error: false },
@@ -124,16 +189,22 @@ export const actionParams = {
 // Keep this independent of SnowLumaActionMap: a missing map entry must fail the
 // consumer's coverage check rather than silently remove that example.
 export type CoveredAction =
+    | 'get_group_admin_permissions'
+    | 'set_group_admin_permissions'
+    | 'set_group_admin_receive_verify'
     | '_get_friend_dress'
     | 'add_custom_face'
     | 'cancel_group_album_media_like'
     | 'clean_stream_temp_file'
     | 'comment_qzone'
+    | 'comment_qzone_public_feed'
     | 'create_flash_task'
     | 'del_group_album_media'
     | 'delete_custom_face'
     | 'delete_flash_file'
     | 'delete_qzone_msg'
+    | 'delete_qzone_public_comment'
+    | 'delete_qzone_public_reply'
     | 'do_group_album_comment'
     | 'download_file_image_stream'
     | 'download_file_record_stream'
@@ -141,6 +212,7 @@ export type CoveredAction =
     | 'download_fileset'
     | 'fetch_custom_face_detail'
     | 'fetch_ptt_text'
+    | 'forward_qzone_public_feed'
     | 'get_ptt_text'
     | 'get_record_text'
     | 'get_doubt_friends_add_request'
@@ -155,6 +227,12 @@ export type CoveredAction =
     | 'get_qun_album_list'
     | 'get_qzone_feeds'
     | 'get_qzone_msg_list'
+    | 'get_qzone_profile'
+    | 'get_qzone_public_capabilities'
+    | 'get_qzone_public_comments'
+    | 'get_qzone_public_feed_detail'
+    | 'get_qzone_public_feeds'
+    | 'get_qzone_public_replies'
     | 'get_rkey_server'
     | 'get_share_link'
     | 'like_qzone'
@@ -162,6 +240,7 @@ export type CoveredAction =
     | 'modify_custom_face'
     | 'move_custom_face_to_front'
     | 'rename_flash_file'
+    | 'reply_qzone_public_feed'
     | 'request_decrypt_key'
     | 'send_ark_share'
     | 'send_flash_msg'
@@ -176,6 +255,11 @@ export type CoveredAction =
     | 'set_group_robot_add_option'
     | 'set_qzone_ban'
     | 'set_qzone_msg_right'
+    | 'set_qzone_profile'
+    | 'set_qzone_public_follow'
+    | 'set_qzone_public_comment_like'
+    | 'set_qzone_public_like'
+    | 'set_qzone_public_upvote'
     | 'share_group_ex'
     | 'share_peer'
     | 'test_download_stream'
@@ -196,6 +280,16 @@ const flashInfo = {
 };
 
 export const actionResults = {
+    get_group_admin_permissions: {
+        group_id: 10001,
+        user_id: 10002,
+        recall_member_message: null,
+        kick_member: true,
+        kick_member_per_day: 20,
+        receive_verify: false,
+    },
+    set_group_admin_permissions: null,
+    set_group_admin_receive_verify: null,
     _get_friend_dress: {
         target_uin: '10002',
         is_svip: true,
@@ -216,11 +310,14 @@ export const actionResults = {
     cancel_group_album_media_like: {},
     clean_stream_temp_file: { message: 'success', removed: 1, freed_bytes: 42, skipped_active: 1 },
     comment_qzone: { comment_id: 'comment' },
+    comment_qzone_public_feed: { comment: qzonePublicComment },
     create_flash_task: { fileset_id: 'fileset', task_id: 'fileset' },
     del_group_album_media: { success: true },
     delete_custom_face: null,
     delete_flash_file: null,
     delete_qzone_msg: null,
+    delete_qzone_public_comment: {},
+    delete_qzone_public_reply: {},
     do_group_album_comment: {
         id: 'comment',
         user: { uin: '10002' },
@@ -255,6 +352,7 @@ export const actionResults = {
     download_fileset: { url: '', file_name: 'file.txt', file_size: 42 },
     fetch_custom_face_detail: [{ emoji_id: 'face', resId: 'face', url: '', md5: '', desc: '' }],
     fetch_ptt_text: { text: 'Speech' },
+    forward_qzone_public_feed: {},
     get_ptt_text: { text: 'Speech' },
     get_record_text: { text: 'Speech' },
     get_doubt_friends_add_request: [
@@ -364,6 +462,29 @@ export const actionResults = {
             },
         ],
     },
+    get_qzone_profile: { name: 'Space', description: 'Description' },
+    get_qzone_public_capabilities: { public_qzone_entrance_switch: true, can_upvote: true },
+    get_qzone_public_comments: {
+        cell_comment: { comments: [qzonePublicComment] },
+        attach_info: 'next-comments',
+        has_more: true,
+    },
+    get_qzone_public_feed_detail: {
+        feed: { feed: qzonePublicFeed },
+        attach_info: 'comments-from-detail',
+        has_more: true,
+    },
+    get_qzone_public_feeds: {
+        feeds: [qzonePublicFeed],
+        has_more: true,
+        next_cursor: 'public-feed-cursor',
+        unknown_page: { preserved: true },
+    },
+    get_qzone_public_replies: {
+        replys: [qzonePublicReply],
+        reply_attach_info: '',
+        has_more: false,
+    },
     get_rkey_server: { expired_time: 1, name: 'SnowLuma', private_rkey: 'fixture' },
     get_share_link: 'https://example.com/share',
     like_qzone: null,
@@ -371,6 +492,7 @@ export const actionResults = {
     modify_custom_face: null,
     move_custom_face_to_front: null,
     rename_flash_file: null,
+    reply_qzone_public_feed: { reply: qzonePublicReply },
     request_decrypt_key: { db_key: 'fixture' },
     send_ark_share: { arkMsg: '{}' },
     send_flash_msg: { message_id: 0 },
@@ -385,6 +507,11 @@ export const actionResults = {
     set_group_robot_add_option: null,
     set_qzone_ban: null,
     set_qzone_msg_right: { ugc_right: 128 },
+    set_qzone_profile: null,
+    set_qzone_public_follow: { ret_code: 0 },
+    set_qzone_public_comment_like: { like: { status: 1 } },
+    set_qzone_public_like: { like: { liked: true } },
+    set_qzone_public_upvote: { upvote: { upvoted: true } },
     share_group_ex: '{}',
     share_peer: { arkMsg: '{}' },
     test_download_stream: {
