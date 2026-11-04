@@ -1,3 +1,39 @@
+export interface ProfilePrivilege {
+    type?: number;
+    level?: number;
+    flag?: number;
+    isBig?: number;
+    jumpUrl?: string;
+    iconUrl?: string;
+    deluxeIconUrl?: string;
+}
+
+/** Only fields actually supplied by the profile service; absent values stay absent. */
+export interface PublicProfileFields {
+    sign?: string;
+    sex?: 'male' | 'female' | 'unknown';
+    age?: number;
+    level?: number;
+    birthdayYear?: number;
+    birthdayMonth?: number;
+    birthdayDay?: number;
+    phoneNum?: string;
+    email?: string;
+    country?: string;
+    province?: string;
+    city?: string;
+    college?: string;
+    vipFlag?: boolean;
+    svipFlag?: boolean;
+    yearVipFlag?: boolean;
+    vipLevel?: number;
+    privilegeIcons?: {
+        jumpUrl?: string;
+        open: ProfilePrivilege[];
+        closed: ProfilePrivilege[];
+    };
+}
+
 export interface UserProfileInfo {
     uin: number;
     uid: string;
@@ -12,7 +48,15 @@ export interface UserProfileInfo {
      *  Already requested in `fetchUserProfile` keys[]; LagrangeV2
      *  `FetchStrangerService.cs` confirms `// Level`. */
     level: number;
+    profile?: PublicProfileFields;
     regTime?: number;
+    /**
+     * 生日 — OIDB 0xFE1_2 bytes-property key 20031。
+     * 月日未设置时三项均缺省；出生年份未公开（年份为 0）时仅缺省 birthdayYear。
+     */
+    birthdayYear?: number;
+    birthdayMonth?: number;
+    birthdayDay?: number;
     vipFlag?: boolean;
     yearVipFlag?: boolean;
     svipFlag?: boolean;
@@ -39,6 +83,8 @@ export interface FriendInfo {
     uid: string;
     nickname: string;
     remark: string;
+    categoryId?: number;
+    profile?: PublicProfileFields;
 }
 
 export interface FriendCategoryInfo {
@@ -112,6 +158,12 @@ export interface GroupRequestInfo {
     comment: string;
     filtered: boolean;
     operateTransInfo?: Uint8Array;
+}
+
+/** Invitations handled by the invited account, rather than a group administrator.
+ * Notification types 1 and 2 use different approval discriminators. */
+export function isSelfGroupInvitation(request: Pick<GroupRequestInfo, 'eventType'>): boolean {
+    return request.eventType === 2 || request.eventType === 10;
 }
 
 /** Approval tuple required by OIDB 0x10C8. The OneBot flag is opaque to

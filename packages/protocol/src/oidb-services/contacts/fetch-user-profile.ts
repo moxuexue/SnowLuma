@@ -14,6 +14,7 @@
 //   105   — QQ level (numeric)
 //   20002 — nickname
 //   20009 — gender (1 male / 2 female / 255 unknown)
+//   20031 — birthday (4 bytes: uint16 BE year, month, day)
 //   20037 — age
 //   27394 — QID
 
@@ -28,6 +29,7 @@ import type {
 import type { UserProfileInfo } from '../../qq-info';
 import { unpackStatusWord } from '../extras/get-stranger-status';
 import { invokeOidb, type OidbSender } from '../../oidb-service';
+import { decodeMembership, decodePublicProfile, PUBLIC_PROFILE_KEYS } from './public-profile';
 
 export function applyOnlineStatus(
     info: UserProfileInfo,
@@ -62,34 +64,64 @@ export function applyProfileDetails(info: UserProfileInfo, numMap: Map<number, n
         info.regTime = registered;
     }
 
-    const flags = numMap.get(41756);
+    Object.assign(info, decodeMembership(numMap));
+}
 
-    if (flags !== undefined) {
-        info.vipFlag = (flags & 1) !== 0;
-        info.yearVipFlag = (flags & 2) !== 0;
-        info.svipFlag = (flags & 0x100) !== 0;
+/**
+ * 生日（bytes-property 20031）：年 uint16 大端 + 月 + 日，与 Lagrange.Core
+ * `FetchStrangerService.cs` 的解析一致。月或日为 0 表示未设置生日；
+ * 年份为 0 表示未公开出生年份，此时只省略年份。
+ */
+export function applyBirthday(info: UserProfileInfo, bytesMap: Map<number, Uint8Array>): void {
+    const raw = bytesMap.get(20031);
+
+    if (raw?.length !== 4) {
+        return;
     }
 
-    const level = numMap.get(41757);
+    const bytes = Buffer.from(raw);
+    const year = bytes.readUInt16BE(0);
+    const month = bytes.readUInt8(2);
+    const day = bytes.readUInt8(3);
 
-    if (level !== undefined) {
-        const mask = level & 0xfff;
+    // A hidden year can still represent February 29.
+    const date = new Date(0);
+    date.setUTCFullYear(year || 2000, month - 1, day);
 
-        if (mask !== 0) {
-            info.vipLevel = 33 - Math.clz32(mask);
-        } else if (info.vipFlag || info.yearVipFlag || info.svipFlag || numMap.get(42241) === 1) {
-            info.vipLevel = 1;
-        } else if (flags !== undefined && numMap.has(42241)) {
-            info.vipLevel = 0;
-        }
+    if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+        return;
     }
+
+    if (year > 0) {
+        info.birthdayYear = year;
+    }
+
+    info.birthdayMonth = month;
+    info.birthdayDay = day;
 }
 
 const REQUESTED_KEYS = [
-    20002, 27394, 20009, 20031, 101, 103, 102, 20020, 20003, 20026, 105, 27372, 27406, 20037, 41756,
-    41757, 42241,
+    20002,
+    27394,
+    20009,
+    20031,
+    101,
+    103,
+    102,
+    20020,
+    20003,
+    20026,
+    105,
+    27372,
+    27406,
+    20037,
+    41756,
+    41757,
+    42241,
     // 企点标志（QQ 企点 / 企业版 QQ 账号）：员工号实测为 1，普通账号为 0
-    40410, 42031,
+    40410,
+    42031,
+    ...PUBLIC_PROFILE_KEYS,
 ];
 
 export namespace FetchUserProfile {
@@ -105,7 +137,7 @@ export namespace FetchUserProfile {
 
     export const serialize = (_ctx: Deps, p: Params): OidbUserInfoRequest => ({
         uin: p.uin,
-        keys: REQUESTED_KEYS.map((k) => ({ key: k })),
+        keys: [...new Set(REQUESTED_KEYS)].map((k) => ({ key: k })),
     });
 
     /** Defaults the response uin to `requestedUin` because the server
@@ -118,6 +150,10 @@ export namespace FetchUserProfile {
     ): UserProfileInfo => {
         if (!body.body) {
             throw new Error('user info response body missing');
+        }
+
+        if (requestedUin > 0 && body.body.uin != null && body.body.uin !== requestedUin) {
+            throw new Error('profile response does not match the requested account');
         }
 
         const info: UserProfileInfo = {
@@ -174,6 +210,13 @@ export namespace FetchUserProfile {
             info.level = numMap.get(105) ?? 0;
             applyOnlineStatus(info, bytesMap, numMap);
             applyProfileDetails(info, numMap);
+            applyBirthday(info, bytesMap);
+            const profile = decodePublicProfile(bytesMap, numMap);
+
+            if (Object.keys(profile).length > 0) {
+                info.profile = profile;
+            }
+
             // 企点标志：40410 / 42031，服务器仅在返回时才出现（普通账号缺省 → 0）
             info.qidianMasterFlag = numMap.get(42031) ?? 0;
             info.qidianCrewFlag = numMap.get(40410) ?? 0;

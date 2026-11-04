@@ -13,6 +13,7 @@ import {
 } from '@snowluma/common/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLIENT_MESSAGE_RECEIPT_CMD } from '@snowluma/common/protocol-types';
+import { HookSession } from '../src/hook-session';
 import {
     HEADER_SIZE,
     listLiveLinuxPipePids,
@@ -85,6 +86,7 @@ function readSendFrame(payload: Buffer): {
 function mockControlPipe(
     pid: number,
     onWrite: (socket: net.Socket, payload: Buffer) => void,
+    ...startupFrames: Buffer[]
 ): ReturnType<typeof vi.spyOn> {
     return vi.spyOn(net, 'createConnection').mockImplementation((() => {
         const socket = new Duplex({
@@ -101,10 +103,13 @@ function mockControlPipe(
             queueMicrotask(() =>
                 socket.emit(
                     'data',
-                    pipeFrame({
-                        op: PipeOp.hello,
-                        value0: BigInt(pid),
-                    }),
+                    Buffer.concat([
+                        pipeFrame({
+                            op: PipeOp.hello,
+                            value0: BigInt(pid),
+                        }),
+                        ...startupFrames,
+                    ]),
                 ),
             );
         });
@@ -117,6 +122,144 @@ function traceMessages(entries: LogEntry[]): string[] {
         .filter((entry) => entry.level === 'trace' && entry.scope === 'QQHook.Packet')
         .map((entry) => entry.message);
 }
+
+describe('initial connection timeout cleanup', () => {
+    it.each(['socket', 'control-hello', 'recv-hello'] as const)(
+        'closes a stalled %s connection and allows unloading',
+        async (phase) => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+            const sockets: net.Socket[] = [];
+            const connection = vi.spyOn(net, 'createConnection').mockImplementation((() => {
+                const socket = new Duplex({
+                    read() {},
+                    write(_chunk, _encoding, callback) {
+                        callback();
+                    },
+                }) as net.Socket;
+                sockets.push(socket);
+                const control = sockets.length === 1;
+
+                if (phase !== 'socket') {
+                    queueMicrotask(() => {
+                        socket.emit('connect');
+
+                        if (control && phase === 'recv-hello') {
+                            queueMicrotask(() =>
+                                socket.emit('data', pipeFrame({ op: PipeOp.hello })),
+                            );
+                        }
+                    });
+                }
+
+                return socket;
+            }) as typeof net.createConnection);
+            const handle = { base: 0n, entry: 0n, exceptionTable: 0n, size: 0 };
+            const unload = vi.fn(async () => {});
+            const session = new HookSession(778905, {
+                injector: {
+                    inject: async () => ({ method: 'loadModuleManual', handle }),
+                    unload,
+                },
+                makeClient: (pid) => new QqHookClient(pid),
+                pipeWatcher: { isPipeLive: () => false },
+                detectLoginUin: async () => null,
+            });
+
+            try {
+                await session.load();
+                session.onPipeUp();
+                await new Promise<void>((resolve) => setImmediate(resolve));
+                expect(sockets).toHaveLength(phase === 'recv-hello' ? 2 : 1);
+                await vi.advanceTimersByTimeAsync(60_000);
+                expect(session.toInfo()).toMatchObject({ status: 'error', injected: true });
+                expect(session.error).toContain('首次连接超时');
+                expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+                await expect(session.unload()).resolves.toMatchObject({ status: 'available' });
+                expect(unload).toHaveBeenCalledExactlyOnceWith(session.pid, handle);
+            } finally {
+                session.dispose();
+
+                for (const socket of sockets) {
+                    socket.destroy();
+                }
+
+                connection.mockRestore();
+                vi.useRealTimers();
+            }
+        },
+    );
+});
+
+describe('runtime initialization failures', () => {
+    const failureFrame = pipeFrame({
+        op: PipeOp.error,
+        cmd: 'runtime',
+        status: -1,
+        message: 'QQ service unavailable',
+    });
+
+    it('rejects startup when a runtime failure follows hello in the same read', async () => {
+        const connection = mockControlPipe(778901, () => {}, failureFrame);
+        const client = new QqHookClient(778901);
+        const failure = vi.fn();
+        client.on('runtimeError', failure);
+
+        try {
+            await expect(client.connect()).rejects.toThrow('QQ service unavailable');
+            expect(failure).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ status: -1, requestId: 0 }),
+            );
+        } finally {
+            client.close();
+            connection.mockRestore();
+        }
+    });
+
+    it('rejects pending and future requests on a runtime failure', async () => {
+        const connection = mockControlPipe(778902, (socket) => {
+            queueMicrotask(() => socket.emit('data', failureFrame));
+        });
+        const client = new QqHookClient(778902);
+
+        try {
+            await expect(client.sendAndWait('Test', Buffer.alloc(0))).rejects.toThrow(
+                'QQ service unavailable',
+            );
+            await expect(client.sendAndWait('Test', Buffer.alloc(0))).rejects.toThrow(
+                'QQ service unavailable',
+            );
+            await expect(client.startRecv()).rejects.toThrow('QQ service unavailable');
+            await expect(client.waitForLogin()).rejects.toThrow('QQ service unavailable');
+        } finally {
+            client.close();
+            connection.mockRestore();
+        }
+    });
+
+    it('rejects login and queued writes when the runtime fails as a connection resumes', async () => {
+        const onWrite = vi.fn();
+        const sockets = mockControlPipe(778903, onWrite);
+        const client = new QqHookClient(778903);
+
+        try {
+            await client.connect();
+            const waiting = client.waitForLogin({ timeoutMs: 100 });
+            const sending = client.sendNoReply('Test', Buffer.alloc(0), { ackTimeoutMs: 100 });
+            const settled = Promise.allSettled([waiting, sending]);
+            sockets.mock.results[0]!.value.emit('data', failureFrame);
+
+            const expected = {
+                status: 'rejected',
+                reason: expect.objectContaining({ message: 'QQ service unavailable' }),
+            };
+            expect(await settled).toEqual([expected, expected]);
+            expect(onWrite).not.toHaveBeenCalled();
+        } finally {
+            client.close();
+            sockets.mockRestore();
+        }
+    });
+});
 
 function runtimeTrace(entries: LogEntry[]): LogEntry[] {
     return entries.filter((entry) => entry.level === 'trace' && entry.scope === 'QQHook.Runtime');
@@ -218,6 +361,15 @@ describe('QqHookClient client message receipts', () => {
             await client.startRecv(onPacket);
             const socket = sockets.mock.results[0]!.value;
             socket.emit('data', pipeFrame({ op: PipeOp.clientMessageState, status: -1 }));
+            socket.emit(
+                'data',
+                pipeFrame({ op: PipeOp.clientMessageState, status: -1, value0: 42n }),
+            );
+            const warning = 'Client private-message reporting is unavailable: PID=12345 status=-1';
+            expect(entries.map((entry) => entry.message)).toEqual([
+                warning,
+                `${warning} reason=42`,
+            ]);
 
             for (const patch of [
                 { value0: 0n },
@@ -242,7 +394,7 @@ describe('QqHookClient client message receipts', () => {
                 entries.filter(
                     (entry) => entry.scope === 'QQHook.Runtime' && entry.level === 'warn',
                 ),
-            ).toHaveLength(6);
+            ).toHaveLength(7);
             socket.emit(
                 'data',
                 pipeFrame({ op: PipeOp.recvPacket, cmd: 'normal', message: '10001', value0: 44n }),

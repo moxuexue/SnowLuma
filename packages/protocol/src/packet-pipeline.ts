@@ -3,8 +3,9 @@ import { formatEvent } from './format';
 import { createLogger, type Logger } from '@snowluma/common/logger';
 import type { BridgeEventBus } from './event-bus';
 import type { QQEventVariant } from './events';
+import type { GroupInviteTracker } from './group-invite-tracker';
 import type { IdentityService } from './identity-service';
-import { formatGroupRequestFlag, type GroupRequestInfo } from './qq-info';
+import { formatGroupRequestFlag, isSelfGroupInvitation, type GroupRequestInfo } from './qq-info';
 
 const moduleLog = createLogger('Bridge');
 const moduleEventLog = createLogger('Event');
@@ -52,8 +53,7 @@ export interface PacketPipelineDeps {
         subType: 'add' | 'invite',
         invitedUid?: string,
     ): Promise<GroupRequestInfo | null>;
-    /** Remember a live card; false means its approval sequence was already seen. */
-    rememberGroupInviteCardSequence(groupUin: number, sequence: number): boolean;
+    groupInvites: GroupInviteTracker;
 }
 
 export class IncomingPacketPipeline {
@@ -385,7 +385,7 @@ export class IncomingPacketPipeline {
         if (
             !groupId ||
             !sequence ||
-            !this.deps.rememberGroupInviteCardSequence(groupId, sequence)
+            !this.deps.groupInvites.receiveCard(groupId, sequence, event.senderUid)
         ) {
             return false;
         }
@@ -502,12 +502,42 @@ export class IncomingPacketPipeline {
         pkt: PacketInfo,
         event: Extract<QQEventVariant, { kind: 'group_invite' }>,
     ): Promise<number> {
-        // Self-invite notices omit the approval msgseq; the private card owns this event.
+        // A self-invite notice carries an inviter UID but no approval sequence.
         if (
             event.subType === 'invite' &&
             this.isSelfMemberIdentity(event.invitedUin ?? 0, event.invitedUid)
         ) {
-            return 0;
+            if (!(event.groupId > 0) || !event.fromUid?.trim() || !event.flag) {
+                this.log.warn('self invitation missing group or inviter: group=%d', event.groupId);
+                return 0;
+            }
+
+            if (!this.deps.groupInvites.receiveNotice(event.groupId, event.fromUid)) {
+                this.log.debug(
+                    'self invitation already dispatched from the card: group=%d',
+                    event.groupId,
+                );
+                return 0;
+            }
+
+            if (!event.fromUin) {
+                event.fromUin =
+                    (await this.deps.identity.resolveUin(event.fromUid, event.groupId)) ?? 0;
+
+                if (!event.fromUin) {
+                    this.log.warn(
+                        'self invitation sender unavailable: group=%d uid=%s',
+                        event.groupId,
+                        event.fromUid,
+                    );
+                }
+            }
+
+            try {
+                return this.dispatchEvent(pkt, event, 'sync');
+            } catch (error) {
+                throw new EnrichedDispatchError(error);
+            }
         }
 
         const uid = event.fromUid;
@@ -534,7 +564,7 @@ export class IncomingPacketPipeline {
             return 0;
         }
 
-        if (request.eventType === 2) {
+        if (isSelfGroupInvitation(request)) {
             return 0;
         }
 

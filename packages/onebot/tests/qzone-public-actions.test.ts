@@ -34,6 +34,27 @@ const cases: {
     readOnly: boolean;
 }[] = [
     {
+        action: 'get_qzone_home_feeds',
+        method: 'getHomeFeeds',
+        params: { target_uin: '10001', cursor: 'cursor' },
+        args: [10001, 'cursor'],
+        readOnly: true,
+    },
+    {
+        action: 'get_qzone_feed_detail',
+        method: 'getFeedDetail',
+        params: { tid: '1127000000f1536501000000' },
+        args: ['1127000000f1536501000000'],
+        readOnly: true,
+    },
+    {
+        action: 'get_qzone_share_ark',
+        method: 'getShareArk',
+        params: { feed },
+        args: [feed],
+        readOnly: false,
+    },
+    {
         action: 'get_qzone_public_capabilities',
         method: 'getPublicCapabilities',
         params: {},
@@ -303,6 +324,13 @@ describe('qzone public actions', () => {
     );
 
     it.each([
+        { action: 'get_qzone_feed_detail', params: {} },
+        { action: 'get_qzone_feed_detail', params: { tid: '' } },
+        { action: 'get_qzone_feed_detail', params: { tid: 'T1' } },
+        { action: 'get_qzone_feed_detail', params: { tid: [] } },
+        { action: 'get_qzone_feed_detail', params: { tid: 'g'.repeat(24) } },
+        { action: 'get_qzone_feed_detail', params: { tid: 'a'.repeat(25) } },
+        { action: 'get_qzone_feed_detail', params: { tid: '1127000000f1536501000000\n' } },
         { action: 'get_qzone_public_feeds', params: { cursor: '' } },
         { action: 'get_qzone_public_feeds', params: { cursor: 'a'.repeat(65537) } },
         { action: 'get_qzone_public_feed_detail', params: {} },

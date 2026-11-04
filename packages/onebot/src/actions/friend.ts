@@ -1,5 +1,6 @@
 import { defineAction, f } from '../action-kit';
-import { okResponse } from '../types';
+import { failedResponse, okResponse, RETCODE } from '../types';
+import { friendResultSchema, publicProfileProperties } from './contact-profile-schema';
 
 export const actions = [
     defineAction({
@@ -12,23 +13,25 @@ export const actions = [
         ],
         summary: '获取好友列表',
         readOnly: true,
-        returns: '好友列表数组，每项含 QQ 号、昵称与备注。',
+        returns:
+            '好友列表，包含账号、昵称、备注及回包已有的公开资料；with_profile=true 时主动补查，失败会报错。未返回的资料省略，零、空字符串和 false 保留。',
         returnsSchema: {
             type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    user_id: { type: 'integer', description: '好友 QQ 号' },
-                    nickname: { type: 'string', description: '好友昵称' },
-                    remark: { type: 'string', description: '好友备注' },
-                },
-                required: ['user_id', 'nickname', 'remark'],
-            },
+            items: friendResultSchema,
         },
-        params: {},
-        run: async (_p, ctx) => {
+        params: {
+            with_profile: f
+                .bool()
+                .default(false)
+                .describe('主动补查好友公开资料，按账号缓存五分钟；大列表可能耗时较长'),
+        },
+        run: async (p, ctx) => {
             if (ctx.getFriendList) {
-                return okResponse(await ctx.getFriendList());
+                return okResponse(await ctx.getFriendList(p.with_profile));
+            }
+
+            if (p.with_profile) {
+                return failedResponse(RETCODE.ACTION_FAILED, 'friend profile provider unavailable');
             }
 
             return okResponse([]);
@@ -49,10 +52,11 @@ export const actions = [
         summary: '获取陌生人信息',
         readOnly: true,
         returns:
-            '用户资料，含账号标识、等级别名和可用的注册时间、会员信息。注册时间或会员信息未返回时省略对应字段；登录天数暂无可靠来源，不返回占位值。',
+            '用户资料，含账号标识、等级别名和可用的注册时间、生日、会员信息。注册时间、生日或会员信息未返回时省略对应字段，出生年份未公开时只省略年份；登录天数暂无可靠来源，不返回占位值。',
         returnsSchema: {
             type: 'object',
             properties: {
+                ...publicProfileProperties,
                 user_id: { type: 'integer', description: 'QQ 号' },
                 uid: { type: 'string', description: '账号唯一标识（仅查到资料时返回）' },
                 qid: { type: 'string', description: '自定义账号标识（仅查到资料时返回）' },
@@ -64,6 +68,18 @@ export const actions = [
                 qq_level: { type: 'integer', description: 'QQ 等级（仅查到资料时返回）' },
                 qqLevel: { type: 'integer', description: 'QQ 等级，同 qq_level' },
                 reg_time: { type: 'integer', description: '注册时间戳（秒），不可用时省略' },
+                birthday_year: {
+                    type: 'integer',
+                    description: '生日年份，兼容 NapCat；未公开或不可用时省略',
+                },
+                birthday_month: {
+                    type: 'integer',
+                    description: '生日月份（1-12），兼容 NapCat；不可用时省略',
+                },
+                birthday_day: {
+                    type: 'integer',
+                    description: '生日日期（1-31），兼容 NapCat；不可用时省略',
+                },
                 is_vip: { type: 'boolean', description: '超级会员状态，兼容 NapCat；不可用时省略' },
                 is_years_vip: { type: 'boolean', description: '年费会员状态，不可用时省略' },
                 vip_level: { type: 'integer', description: '会员等级，不可用时省略' },

@@ -192,7 +192,8 @@ export interface OidbSetAdmin {
 //   dev/napcatQQInside/…/proto/oidb/Oidb.0x8FC_2.ts    (body=3, targetName=8)
 export interface OidbRenameMemberBody {
     targetUid?: pb<1, string>;
-    targetName?: pb<8, string>;
+    // Clearing a card requires sending an empty string in field 8 (#620).
+    targetName?: pb_optional<8, string>;
 }
 export interface OidbRenameMember {
     groupUin?: pb<1, uint_32>;
@@ -275,6 +276,26 @@ export interface OidbUserInfoResponseBody {
 }
 export interface OidbUserInfoResponse {
     body?: pb<1, OidbUserInfoResponseBody>;
+}
+
+// Profile property 107 contains separate opened and closed privilege lists.
+// The two icon URLs are independent fields, not a oneof.
+export interface OidbProfilePrivilege {
+    type?: pb<1, int_32>;
+    level?: pb<4, int_32>;
+    flag?: pb<5, int_32>;
+    iconUrl?: pb<6, bytes>;
+    deluxeIconUrl?: pb<7, bytes>;
+    jumpUrl?: pb<8, bytes>;
+    isBig?: pb<9, int_32>;
+}
+export interface OidbProfilePrivilegeLists {
+    jumpUrl?: pb<2, bytes>;
+    open?: pb_repeated<3, OidbProfilePrivilege>;
+    closed?: pb_repeated<4, OidbProfilePrivilege>;
+}
+export interface OidbProfilePrivileges {
+    lists?: pb<3, OidbProfilePrivilegeLists>;
 }
 export interface AvatarInfo {
     url?: pb<5, string>;
@@ -637,10 +658,13 @@ export interface Oidb0x8a7Resp {
     canAtAll?: pb<6, bool>;
 }
 export interface Oidb0xe17Req {
+    subCommand?: pb_optional<2, uint_32>;
     jsonBody?: pb<3, string>;
 }
 export interface Oidb0xe17Resp {
+    errorCode?: pb<3, uint_32>;
     jsonBody?: pb<4, string>;
+    errorMessage?: pb<5, string>;
 }
 export interface Oidb0x112aProfileInfo {
     tag?: pb<1, uint_32>;

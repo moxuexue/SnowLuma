@@ -1,3 +1,5 @@
+import { GroupInviteTracker } from '@snowluma/protocol/group-invite-tracker';
+import { isSelfGroupInvitation } from '@snowluma/protocol/qq-info';
 import { FetchDownloadRkeys } from '@snowluma/protocol/oidb-services/contacts/fetch-download-rkeys';
 import {
     FetchFriendListPage,
@@ -42,6 +44,7 @@ import type {
     FriendInfo,
     GroupMemberInfo,
     GroupRequestInfo,
+    PublicProfileFields,
     QQGroupInfo,
     UserProfileInfo,
 } from '@snowluma/protocol/qq-info';
@@ -92,6 +95,13 @@ function normalizeGroupRequestSequence(
 }
 
 const MEMBER_LIST_TTL_MS = 60_000;
+const FRIEND_PROFILE_TTL_MS = 5 * 60_000;
+const FRIEND_PROFILE_CONCURRENCY = 4;
+
+export interface FriendListOptions {
+    /** Explicitly query profiles; ordinary roster refreshes never fan out. */
+    withProfile?: boolean;
+}
 
 export class ContactsApi {
     /**
@@ -109,9 +119,16 @@ export class ContactsApi {
             load: (groupId) => this.fetchGroupMemberListUncached(groupId),
         });
     private robotUinRangesPromise_: Promise<RobotUinRangeSnapshot> | null = null;
-    /** groupUin → approval msgseq from a private qun.invite card. Written
-     *  only by IncomingPacketPipeline (and tests). OneBot reads get/find. */
-    private readonly groupInviteCardSeqs_ = new Map<number, number>();
+    readonly groupInvites = new GroupInviteTracker();
+    private friendRosterGeneration = 0;
+    private rememberedFriendRosterGeneration = 0;
+    private activeProfiles = 0;
+    private readonly profileWaiters: (() => void)[] = [];
+    private readonly friendProfiles: SingleFlightCache<number, PublicProfileFields> =
+        createSingleFlightCache({
+            ttlMs: FRIEND_PROFILE_TTL_MS,
+            load: (uin) => this.loadFriendProfile(uin),
+        });
 
     constructor(private readonly ctx: BridgeContext) {}
 
@@ -177,7 +194,73 @@ export class ContactsApi {
         return SendTuwenArk.invoke(this.ctx, params);
     }
 
-    private async fetchFriendRoster(): Promise<FriendRoster> {
+    private async loadFriendProfile(uin: number): Promise<PublicProfileFields> {
+        if (this.activeProfiles >= FRIEND_PROFILE_CONCURRENCY) {
+            await new Promise<void>((resolve) => this.profileWaiters.push(resolve));
+        } else {
+            this.activeProfiles++;
+        }
+
+        try {
+            const profile = await this.fetchUserProfile(uin);
+
+            return profile.profile ?? {};
+        } catch (cause) {
+            log.warn(
+                'friend profile query failed: user=%d error=%s',
+                uin,
+                cause instanceof Error ? cause.message : String(cause),
+            );
+            throw new Error(`friend profile query failed for ${uin}`, { cause });
+        } finally {
+            const next = this.profileWaiters.shift();
+
+            if (next) {
+                next();
+            } else {
+                this.activeProfiles--;
+            }
+        }
+    }
+
+    private async enrichFriendProfiles(entries: FriendListPageEntry[]): Promise<void> {
+        const started = Date.now();
+
+        for (let offset = 0; offset < entries.length; offset += FRIEND_PROFILE_CONCURRENCY) {
+            const batch = entries.slice(offset, offset + FRIEND_PROFILE_CONCURRENCY);
+            const results = await Promise.allSettled(
+                batch.map(async ({ friend }) => {
+                    const extra = await this.friendProfiles.get(friend.uin);
+                    friend.profile = { ...structuredClone(extra), ...friend.profile };
+                }),
+            );
+            const errors = results.filter(
+                (result): result is PromiseRejectedResult => result.status === 'rejected',
+            );
+
+            if (errors.length > 0) {
+                log.warn(
+                    'friend profile enrichment failed: batch=%d failures=%d elapsedMs=%d',
+                    offset,
+                    errors.length,
+                    Date.now() - started,
+                );
+                throw new AggregateError(
+                    errors.map((result) => result.reason),
+                    'friend profile enrichment failed',
+                );
+            }
+        }
+
+        log.debug(
+            'friend profiles loaded: friends=%d elapsedMs=%d',
+            entries.length,
+            Date.now() - started,
+        );
+    }
+
+    private async fetchFriendRoster(options: FriendListOptions = {}): Promise<FriendRoster> {
+        const generation = ++this.friendRosterGeneration;
         const entries: FriendListPageEntry[] = [];
         const categories = new Map<number, FriendListPageCategory>();
         const seenCookies = new Set<string>();
@@ -207,18 +290,25 @@ export class ContactsApi {
             cookie = next;
         }
 
-        const friends = entries.map((entry) => entry.friend);
-        this.ctx.identity.rememberFriends(friends);
+        if (options.withProfile) {
+            await this.enrichFriendProfiles(entries);
+        }
+
+        if (generation > this.rememberedFriendRosterGeneration) {
+            this.ctx.identity.rememberFriends(entries.map((entry) => entry.friend));
+            this.rememberedFriendRosterGeneration = generation;
+        }
+
         return { entries, categories: [...categories.values()] };
     }
 
-    async fetchFriendList(): Promise<FriendInfo[]> {
-        const roster = await this.fetchFriendRoster();
+    async fetchFriendList(options: FriendListOptions = {}): Promise<FriendInfo[]> {
+        const roster = await this.fetchFriendRoster(options);
         return roster.entries.map((entry) => entry.friend);
     }
 
-    async fetchFriendCategories(): Promise<FriendCategoryInfo[]> {
-        const roster = await this.fetchFriendRoster();
+    async fetchFriendCategories(options: FriendListOptions = {}): Promise<FriendCategoryInfo[]> {
+        const roster = await this.fetchFriendRoster(options);
         const buckets = new Map(
             roster.categories.map((category) => [category.categoryId, [] as FriendInfo[]]),
         );
@@ -608,7 +698,7 @@ export class ContactsApi {
 
                 return subType === 'add'
                     ? request.eventType === 1 && request.targetUid === uid
-                    : (request.eventType === 2 || request.eventType === 22) &&
+                    : (isSelfGroupInvitation(request) || request.eventType === 22) &&
                           request.invitorUid === uid &&
                           request.targetUid === invitedUid;
             }) ?? null
@@ -616,32 +706,16 @@ export class ContactsApi {
     }
 
     /** Returns whether this live card introduces a new approval sequence. */
-    rememberGroupInviteCardSequence(groupUin: number, sequence: number): boolean {
-        if (this.groupInviteCardSeqs_.get(groupUin) === sequence) {
-            return false;
-        }
-
-        this.groupInviteCardSeqs_.set(groupUin, sequence);
-        return true;
+    rememberGroupInviteCardSequence(groupId: number, sequence: number): boolean {
+        return this.groupInvites.receiveCard(groupId, sequence);
     }
 
-    /** The approval msgseq captured from a private "qun.invite" card for this
-     *  group, or undefined if none was seen. `set_group_add_request` uses it to
-     *  approve a bot self-invite via 0x10c8 (eventType=2). See issue #125. */
     getGroupInviteCardSequence(groupId: number): number | undefined {
-        return this.groupInviteCardSeqs_.get(groupId);
+        return this.groupInvites.getCardSequence(groupId);
     }
 
-    /** Resolve the group for a private invite-card msgseq. Numeric OneBot flags
-     *  use this path because the card sequence is absent from 0x10C0. */
-    findGroupInviteCardGroupBySequence(sequence: number): number | undefined {
-        for (const [groupUin, rememberedSequence] of this.groupInviteCardSeqs_) {
-            if (rememberedSequence === sequence) {
-                return groupUin;
-            }
-        }
-
-        return undefined;
+    findGroupInviteCardGroupBySequence(sequence: number, groupId?: number): number | undefined {
+        return this.groupInvites.findCardGroup(sequence, groupId);
     }
 
     async fetchDownloadRKeys(): Promise<DownloadRKeyInfo[]> {

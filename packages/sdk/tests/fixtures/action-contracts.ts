@@ -30,6 +30,8 @@ const qzonePublicReply = {
 // The same examples are compiled against the published declarations and parsed
 // by the real server action definitions. They never invoke QQ or perform I/O.
 export const actionParams = {
+    get_friend_list: { with_profile: true },
+    get_friends_with_category: { with_profile: false },
     get_group_admin_permissions: { group_id: '10001', user_id: '10002' },
     set_group_admin_permissions: {
         group_id: '10001',
@@ -96,6 +98,9 @@ export const actionParams = {
     get_qzone_msg_list: { target_uin: '10002', pos: '0', num: '20' },
     get_qzone_profile: { target_uin: '10002' },
     get_qzone_public_capabilities: {},
+    get_qzone_home_feeds: { target_uin: '10001', cursor: 'home-feed-cursor' },
+    get_qzone_feed_detail: { tid: '1127000000f1536501000000' },
+    get_qzone_share_ark: { feed: qzonePublicFeed },
     get_qzone_public_comments: { feed: qzonePublicFeed, cursor: 'comments-from-detail' },
     get_qzone_public_feed_detail: { feed: qzonePublicFeed },
     get_qzone_public_feeds: { cursor: 'public-feed-cursor' },
@@ -189,6 +194,8 @@ export const actionParams = {
 // Keep this independent of SnowLumaActionMap: a missing map entry must fail the
 // consumer's coverage check rather than silently remove that example.
 export type CoveredAction =
+    | 'get_friend_list'
+    | 'get_friends_with_category'
     | 'get_group_admin_permissions'
     | 'set_group_admin_permissions'
     | 'set_group_admin_receive_verify'
@@ -229,6 +236,9 @@ export type CoveredAction =
     | 'get_qzone_msg_list'
     | 'get_qzone_profile'
     | 'get_qzone_public_capabilities'
+    | 'get_qzone_home_feeds'
+    | 'get_qzone_feed_detail'
+    | 'get_qzone_share_ark'
     | 'get_qzone_public_comments'
     | 'get_qzone_public_feed_detail'
     | 'get_qzone_public_feeds'
@@ -280,6 +290,29 @@ const flashInfo = {
 };
 
 export const actionResults = {
+    get_friend_list: [
+        {
+            user_id: 10001,
+            nickname: 'Friend',
+            remark: '',
+            category_id: 0,
+            long_nick: '',
+            age: 0,
+            is_qq_vip: false,
+            privilege_icons: {
+                open: [{ type: 1, icon_url: 'normal', deluxe_icon_url: 'deluxe' }],
+                closed: [],
+            },
+        },
+    ],
+    get_friends_with_category: [
+        {
+            categoryId: 0,
+            categoryName: 'Friends',
+            categoryMbCount: 1,
+            buddyList: [{ user_id: 10001, nickname: 'Friend', remark: '', city: 'City' }],
+        },
+    ],
     get_group_admin_permissions: {
         group_id: 10001,
         user_id: 10002,
@@ -464,6 +497,19 @@ export const actionResults = {
     },
     get_qzone_profile: { name: 'Space', description: 'Description' },
     get_qzone_public_capabilities: { public_qzone_entrance_switch: true, can_upvote: true },
+    get_qzone_home_feeds: { feeds: [qzonePublicFeed], has_more: false, next_cursor: null },
+    get_qzone_feed_detail: {
+        feed: {
+            cell_common: { domain_type: 1, union_id: { feed_id: '1127000000f1536501000000' } },
+            cell_pic: { future_image_field: true },
+        },
+        attach_info: 'comments-from-detail',
+    },
+    get_qzone_share_ark: {
+        ark: '{"app":"com.tencent.tuwen.lua"}',
+        requires_confirmation: false,
+        notice: null,
+    },
     get_qzone_public_comments: {
         cell_comment: { comments: [qzonePublicComment] },
         attach_info: 'next-comments',

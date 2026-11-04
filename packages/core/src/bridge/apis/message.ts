@@ -8,7 +8,7 @@ import type {
     SsoReadedReportReq,
     SsoReadedReportResp,
 } from '@snowluma/proto-defs/oidb-actions/base';
-import { buildSendElems } from '@snowluma/protocol/element-builder';
+import { buildSendElems, encodePrivateRichText } from '@snowluma/protocol/element-builder';
 import { assertWindowShakeSendPolicy } from '@snowluma/protocol/element-manifest';
 import { FinalizeOfflineFile } from '@snowluma/protocol/oidb-services/group-file/finalize-offline-file';
 import { datalineTextFromElements, encodeDatalineText } from '@snowluma/protocol/dataline/codec';
@@ -22,7 +22,7 @@ import {
     fetchC2cRoamMessagePage,
     fetchGroupMessageRange,
 } from '@snowluma/protocol/msg-push';
-import { protobuf_decode, protobuf_encode } from '@snowluma/proton';
+import { type bytes, protobuf_decode, protobuf_encode } from '@snowluma/proton';
 import { createLogger } from '@snowluma/common/logger';
 import type { SendPacketResult } from '@snowluma/common/packet-sender';
 import type { BridgeContext } from '../bridge-context';
@@ -254,6 +254,7 @@ type FriendMessage = Extract<QQEventVariant, { kind: 'friend_message' }>;
 // ── Group-history fetch guards (the server frequency-limits / kicks abusive
 //    pulls, so keep each request small, bound the loop, and space the sends). ──
 const HISTORY_MAX_COUNT = 200; // hard cap on messages returned per call
+const PRIVATE_HISTORY_PAGE_SIZE = 100;
 const HISTORY_CHUNK_SEQ = 30; // sequence span per server request (small packet)
 const HISTORY_MAX_REQUESTS = 12; // bound the walk-back loop
 const HISTORY_MIN_GAP_MS = 300; // minimum spacing between SsoGetGroupMsg sends
@@ -547,15 +548,15 @@ export class MessageApi {
             userUid = await this.ctx.resolveUserUid(userUin);
         }
 
-        const protoElems = await buildSendElems(elements, {
-            bridge: this.ctx as unknown as Bridge,
+        const richText = await encodePrivateRichText(elements, {
+            bridge: this.ctx,
             userUid,
             scene: 'direct-private',
         });
         const random = this.ctx.nextMessageRandom();
         const clientSeq = this.ctx.nextClientSequence();
 
-        const request = protobuf_encode<SendMessageRequest>({
+        const request = protobuf_encode<SendMessageRequest<bytes>>({
             routingHead: {
                 c2c: {
                     uin: userUin,
@@ -567,11 +568,7 @@ export class MessageApi {
                 subType: 0,
                 c2cCmd: 11,
             },
-            messageBody: {
-                richText: {
-                    elems: protoElems,
-                },
-            },
+            messageBody: { richText },
             clientSequence: clientSeq,
             random,
             syncCookie: new Uint8Array(0),
@@ -1543,7 +1540,7 @@ export class MessageApi {
                     selfUin,
                     friendUid,
                     cursor.time,
-                    want - collected.size,
+                    Math.min(want - collected.size, PRIVATE_HISTORY_PAGE_SIZE),
                     cursor.random,
                 ),
             );
@@ -1564,7 +1561,7 @@ export class MessageApi {
                 break;
             }
 
-            if (page.cursor.time === 0 && page.cursor.random === 0) {
+            if (page.isComplete || (page.cursor.time === 0 && page.cursor.random === 0)) {
                 reachedEnd = true;
                 break;
             }
@@ -1572,11 +1569,6 @@ export class MessageApi {
             const nextCursorKey = `${page.cursor.time}:${page.cursor.random}`;
 
             if (seenCursors.has(nextCursorKey)) {
-                if (page.messages.length === 0) {
-                    reachedEnd = true;
-                    break;
-                }
-
                 throw new Error(
                     `private roam history cursor did not advance from ${cursor.time}/${cursor.random}`,
                 );

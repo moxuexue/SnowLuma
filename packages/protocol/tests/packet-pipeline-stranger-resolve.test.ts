@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { GroupInviteTracker } from '@snowluma/protocol/group-invite-tracker';
 import { IncomingPacketPipeline } from '@snowluma/protocol/packet-pipeline';
 import { BridgeEventBus } from '@snowluma/protocol/event-bus';
 import { IdentityService } from '@snowluma/protocol/identity-service';
@@ -49,7 +50,7 @@ function makePipeline(
         fetchGroupList: vi.fn(async () => {}),
         fetchGroupMemberList: vi.fn(async () => {}),
         resolveGroupJoinRequest,
-        rememberGroupInviteCardSequence: vi.fn(() => true),
+        groupInvites: new GroupInviteTracker(),
     });
 
     const captured: QQEventVariant[] = [];
@@ -193,13 +194,32 @@ describe('IncomingPacketPipeline / group requests', () => {
         ]);
     });
 
-    it('leaves self invitations to the card without querying or waiting', async () => {
-        const { pipeline, captured, resolveGroupJoinRequest, fetchProfileByUid } = makePipeline();
-        await receive(pipeline, requestEvent({ subType: 'invite', invitedUin: 10001 }));
-        expect(captured).toEqual([]);
-        expect(resolveGroupJoinRequest).not.toHaveBeenCalled();
-        expect(fetchProfileByUid).not.toHaveBeenCalled();
-    });
+    it.each([76543, 0])(
+        'resolves the self-invite sender without querying the inbox (profile UIN %d)',
+        async (uin) => {
+            const fetchProfileByUid = vi.fn(async () => makeProfile(uin));
+            const { pipeline, captured, resolveGroupJoinRequest } = makePipeline({
+                fetchProfileByUid,
+            });
+            await receive(
+                pipeline,
+                requestEvent({
+                    subType: 'invite',
+                    invitedUin: 10001,
+                    flag: 'invite:12345:u_requester',
+                }),
+            );
+            expect(captured).toHaveLength(1);
+            expect(captured[0]).toMatchObject({
+                kind: 'group_invite',
+                fromUin: uin,
+                invitedUin: 10001,
+                flag: 'invite:12345:u_requester',
+            });
+            expect(resolveGroupJoinRequest).not.toHaveBeenCalled();
+            expect(fetchProfileByUid).toHaveBeenCalledExactlyOnceWith('u_requester');
+        },
+    );
 
     it('does not substitute a list sequence for the self-invite card sequence', async () => {
         const resolveGroupJoinRequest = vi.fn(async () =>
@@ -279,7 +299,7 @@ describe('IncomingPacketPipeline / #1 group card self-heal', () => {
             fetchGroupList: vi.fn(async () => {}),
             fetchGroupMemberList: vi.fn(async () => {}),
             resolveGroupJoinRequest: vi.fn(async () => null),
-            rememberGroupInviteCardSequence: vi.fn(() => true),
+            groupInvites: new GroupInviteTracker(),
         });
         return { identity, pipeline };
     }
@@ -393,7 +413,7 @@ describe('IncomingPacketPipeline / group_card_change from message traffic', () =
             fetchGroupList: vi.fn(async () => {}),
             fetchGroupMemberList: vi.fn(async () => {}),
             resolveGroupJoinRequest: vi.fn(async () => null),
-            rememberGroupInviteCardSequence: vi.fn(() => true),
+            groupInvites: new GroupInviteTracker(),
         });
         const captured: QQEventVariant[] = [];
         events.onAny((e) => captured.push(e as QQEventVariant));

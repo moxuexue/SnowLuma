@@ -7,6 +7,7 @@ import {
 } from '@snowluma/protocol/dataline/device-contacts';
 import {
     formatGroupRequestFlag,
+    isSelfGroupInvitation,
     type GroupMemberInfo,
     type GroupRequestInfo,
     type UserProfileInfo,
@@ -14,6 +15,7 @@ import {
 import type { QidianCorpInfo } from '@snowluma/protocol/services/qidian/fetch-corp-info';
 import type { OneBotInstanceContext } from '../instance-context';
 import type { JsonObject } from '../types';
+import { formatFriend, formatPublicProfile } from './contact-profile';
 
 const REQUESTER_PROFILE_CONCURRENCY = 4;
 const log = createLogger('OneBot.Contacts');
@@ -49,21 +51,28 @@ async function fetchSingleGroupMembers(
     }
 }
 
-function toFriendRow(friend: { uin: number; nickname: string; remark: string }): JsonObject {
-    return {
-        user_id: friend.uin,
-        nickname: friend.nickname,
-        remark: friend.remark,
-    };
-}
-
-export async function getFriendList(bridge: BridgeInterface): Promise<JsonObject[]> {
+export async function getFriendList(
+    bridge: BridgeInterface,
+    withProfile = false,
+): Promise<JsonObject[]> {
     let rows: JsonObject[];
 
     try {
-        rows = (await bridge.apis.contacts.fetchFriendList()).map(toFriendRow);
-    } catch {
-        rows = bridge.identity.friends.map(toFriendRow);
+        rows = (await bridge.apis.contacts.fetchFriendList({ withProfile })).map((friend) =>
+            formatFriend(friend),
+        );
+    } catch (error) {
+        log.warn(
+            'friend list refresh failed: withProfile=%s error=%s',
+            withProfile,
+            error instanceof Error ? error.message : String(error),
+        );
+
+        if (withProfile) {
+            throw error;
+        }
+
+        rows = bridge.identity.friends.map((friend) => formatFriend(friend));
     }
 
     const occupied = new Set(rows.map((row) => Number(row.user_id)));
@@ -387,9 +396,14 @@ function formatStrangerInfo(p: UserProfileInfo, corp?: QidianCorpInfo | null): J
         qqLevel: p.level,
         level: p.level,
         ...(p.regTime !== undefined ? { reg_time: p.regTime } : {}),
+        ...(p.birthdayYear !== undefined ? { birthday_year: p.birthdayYear } : {}),
+        ...(p.birthdayMonth !== undefined ? { birthday_month: p.birthdayMonth } : {}),
+        ...(p.birthdayDay !== undefined ? { birthday_day: p.birthdayDay } : {}),
         ...(p.svipFlag !== undefined ? { is_vip: p.svipFlag } : {}),
         ...(p.yearVipFlag !== undefined ? { is_years_vip: p.yearVipFlag } : {}),
         ...(p.vipLevel !== undefined ? { vip_level: p.vipLevel } : {}),
+        ...(p.vipFlag !== undefined ? { is_qq_vip: p.vipFlag } : {}),
+        ...formatPublicProfile(p.profile),
         status: p.status ?? 0,
         extStatus: p.extStatus ?? 0,
         ext_status: p.extStatus ?? 0,
@@ -442,7 +456,12 @@ export async function getStrangerInfo(
         const p = await bridge.apis.contacts.fetchUserProfile(userId);
         const corp = await strangerCorpInfo(bridge, p);
         return formatStrangerInfo(p, corp);
-    } catch {
+    } catch (error) {
+        log.warn(
+            'user profile refresh failed, checking cached profile: user=%d error=%s',
+            userId,
+            error instanceof Error ? error.message : String(error),
+        );
         const p = bridge.identity.findUserProfile(userId);
 
         if (p) {
@@ -570,11 +589,12 @@ async function resolveRequesterUins(
     return resolved;
 }
 
-/** Join request (7) or invite that still needs an admin (5 / mapped 22). */
+/** Join requests, self invitations, and invitations awaiting administrator approval. */
 function isJoinOrInviteNotify(notifyType: number | undefined): boolean {
     return (
         notifyType === undefined ||
         notifyType === 1 ||
+        notifyType === 2 ||
         notifyType === 5 ||
         notifyType === 7 ||
         notifyType === 22
@@ -586,7 +606,7 @@ function groupRequestActor(request: GroupRequestInfo): {
     uin: number;
     name: string;
 } {
-    if (request.notifyType === 1) {
+    if (isSelfGroupInvitation(request)) {
         return {
             uid: request.invitorUid,
             uin: request.invitorUin,

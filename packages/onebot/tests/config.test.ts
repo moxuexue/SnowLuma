@@ -148,6 +148,44 @@ describe('assertValidOneBotConfig', () => {
         expect(() => assertValidOneBotConfig(ws)).toThrow(/reconnectIntervalMs/);
     });
 
+    it('bounds maxPayloadBytes when one is configured', () => {
+        for (const invalid of [0, 1023, 2 * 1024 * 1024 * 1024 + 1, 1024.5, '104857600']) {
+            const config = makeDefaultOneBotConfig();
+            config.networks.wsServers[0].maxPayloadBytes = invalid as unknown as number;
+            expect(() => assertValidOneBotConfig(config), String(invalid)).toThrow(
+                /maxPayloadBytes/,
+            );
+        }
+
+        const accepted = makeDefaultOneBotConfig();
+        accepted.networks.wsServers[0].maxPayloadBytes = 1024;
+        expect(() => assertValidOneBotConfig(accepted)).not.toThrow();
+
+        // The third WebSocket-capable adapter: httpServers with the embedded WS.
+        const httpWs = makeDefaultOneBotConfig();
+        httpWs.networks.httpServers[0].enableWebSocket = true;
+        httpWs.networks.httpServers[0].maxPayloadBytes = 2048;
+        expect(() => assertValidOneBotConfig(httpWs)).not.toThrow();
+    });
+
+    it('rejects maxPayloadBytes on the pure HTTP client adapter', () => {
+        const config = makeDefaultOneBotConfig();
+        config.networks.httpClients.push({
+            name: 'mirror',
+            url: 'http://127.0.0.1:9000',
+            messageFormat: 'array',
+            reportSelfMessage: false,
+        });
+        // HttpPostAdapter has no WebSocket transport, so the value could only be
+        // saved and silently ignored.
+        (config.networks.httpClients[0] as unknown as Record<string, unknown>).maxPayloadBytes =
+            1024;
+
+        expect(() => assertValidOneBotConfig(config)).toThrow(
+            /maxPayloadBytes is only supported by WebSocket adapters/,
+        );
+    });
+
     it('rejects server paths that cannot match a URL pathname', () => {
         for (const invalidPath of ['api', '/api?token=x', '/api#fragment', ' /api']) {
             const config = makeDefaultOneBotConfig();
@@ -363,6 +401,133 @@ describe('loadOneBotConfig', () => {
         expect(reloaded.networks.httpClients[0].name).toBe('self-mirror');
         expect(reloaded.networks.httpClients[0].messageFormat).toBe('string');
         expect(reloaded.networks.httpClients[0].reportSelfMessage).toBe(true);
+    });
+
+    it('round-trips maxPayloadBytes (both directions) and omits it when unset', () => {
+        const uin = '10020';
+        const config = makeDefaultOneBotConfig();
+        config.networks.wsServers[0].maxPayloadBytes = 512 * 1024 * 1024;
+        config.networks.wsClients.push({
+            name: 'astrbot',
+            url: 'ws://127.0.0.1:6199/ws',
+            messageFormat: 'array',
+            reportSelfMessage: false,
+            maxPayloadBytes: 256 * 1024 * 1024,
+        });
+        saveOneBotConfig(uin, config);
+
+        const onDisk = JSON.parse(
+            fs.readFileSync(path.join(tempDir, 'config', `onebot_${uin}.json`), 'utf8'),
+        );
+        expect(onDisk.networks.wsServers[0].maxPayloadBytes).toBe(512 * 1024 * 1024);
+        expect(onDisk.networks.wsClients[0].maxPayloadBytes).toBe(256 * 1024 * 1024);
+        // Unset adapters must not gain the key, so existing configs stay byte-stable.
+        expect(onDisk.networks.httpServers[0].maxPayloadBytes).toBeUndefined();
+
+        const reloaded = loadOneBotConfig(uin);
+        expect(reloaded.networks.wsServers[0].maxPayloadBytes).toBe(512 * 1024 * 1024);
+        expect(reloaded.networks.wsClients[0]!.maxPayloadBytes).toBe(256 * 1024 * 1024);
+
+        const prepared = prepareOneBotConfigForRestore(onDisk, 'per-uin');
+        const preparedNetworks = prepared.value.networks as {
+            wsClients: Array<Record<string, unknown>>;
+        };
+        expect(preparedNetworks.wsClients[0]!.maxPayloadBytes).toBe(256 * 1024 * 1024);
+
+        const junk = structuredClone(onDisk) as {
+            networks: { wsClients: Array<Record<string, unknown>> };
+        };
+
+        for (const value of [0, '268435456', 1024.5, null]) {
+            junk.networks.wsClients[0]!.maxPayloadBytes = value;
+            expect(() => prepareOneBotConfigForRestore(junk, 'per-uin')).toThrow(/maxPayloadBytes/);
+        }
+    });
+
+    it.each(['httpServers', 'wsServers', 'wsClients'] as const)(
+        'rejects invalid on-disk maxPayloadBytes for %s without rewriting the file',
+        (kind) => {
+            const dir = path.join(tempDir, 'config');
+            fs.mkdirSync(dir, { recursive: true });
+            const file = path.join(dir, 'onebot_10023.json');
+
+            for (const value of [-1, 0, 1023, 1024.5, 2 * 1024 ** 3 + 1, '2048', null, true]) {
+                const raw = JSON.stringify({
+                    mode: 'snapshot',
+                    networks: {
+                        [kind]: [
+                            {
+                                name: 'invalid-limit',
+                                port: 3001,
+                                url: 'ws://127.0.0.1:3001',
+                                enableWebSocket: true,
+                                maxPayloadBytes: value,
+                            },
+                        ],
+                    },
+                });
+                fs.writeFileSync(file, raw, 'utf8');
+                expect(() => loadOneBotConfig('10023'), String(value)).toThrow(/maxPayloadBytes/);
+                expect(fs.readFileSync(file, 'utf8')).toBe(raw);
+            }
+        },
+    );
+
+    it('persists maxPayloadBytes for httpServers and rejects it for httpClients', () => {
+        const uin = '10021';
+        const config = makeDefaultOneBotConfig();
+        config.networks.httpServers[0].enableWebSocket = true;
+        config.networks.httpServers[0].maxPayloadBytes = 4096;
+        saveOneBotConfig(uin, config);
+
+        const onDisk = JSON.parse(
+            fs.readFileSync(path.join(tempDir, 'config', `onebot_${uin}.json`), 'utf8'),
+        );
+        expect(onDisk.networks.httpServers[0].maxPayloadBytes).toBe(4096);
+        expect(loadOneBotConfig(uin).networks.httpServers[0].maxPayloadBytes).toBe(4096);
+        expect(() => prepareOneBotConfigForRestore(onDisk, 'per-uin')).not.toThrow();
+
+        // A restore source that carries the key on a non-WS adapter is rejected
+        // rather than accepted into a config where it can never apply.
+        const withHttpClient = structuredClone(onDisk) as {
+            networks: { httpClients: Array<Record<string, unknown>> };
+        };
+        withHttpClient.networks.httpClients.push({
+            name: 'mirror',
+            url: 'http://127.0.0.1:9000',
+            maxPayloadBytes: 4096,
+        });
+        expect(() => prepareOneBotConfigForRestore(withHttpClient, 'per-uin')).toThrow(
+            /maxPayloadBytes is not supported/,
+        );
+
+        // A hand-written file must reject the same unsupported field instead
+        // of discarding it before the canonical validation runs.
+        const dir = path.join(tempDir, 'config');
+        fs.writeFileSync(
+            path.join(dir, 'onebot_10022.json'),
+            JSON.stringify({
+                mode: 'snapshot',
+                networks: {
+                    httpServers: [],
+                    httpClients: [
+                        {
+                            name: 'mirror',
+                            url: 'http://127.0.0.1:9000',
+                            messageFormat: 'array',
+                            reportSelfMessage: false,
+                            maxPayloadBytes: 4096,
+                        },
+                    ],
+                    wsServers: [],
+                    wsClients: [],
+                },
+            }),
+            'utf8',
+        );
+        expect(() => loadOneBotConfig('10022')).toThrow(
+            /maxPayloadBytes is only supported by WebSocket adapters/,
+        );
     });
 
     it('replays a saved per-UIN snapshot without reviving deleted global adapters', () => {

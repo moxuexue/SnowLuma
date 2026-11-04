@@ -67,8 +67,8 @@ function friend(
                 type: 1,
                 layer1: {
                     properties: [
-                        { code: 20002, value: nickname },
-                        { code: 103, value: remark },
+                        { code: 20002, value: Buffer.from(nickname) },
+                        { code: 103, value: Buffer.from(remark) },
                     ],
                 },
             },
@@ -478,8 +478,8 @@ describe('apis/contacts / categorized friend roster', () => {
         ]);
 
         await expect(api.fetchFriendList()).resolves.toEqual([
-            { uin: 10001, uid: 'u1', nickname: 'Default', remark: '' },
-            { uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A' },
+            { uin: 10001, uid: 'u1', nickname: 'Default', remark: '', categoryId: 0 },
+            { uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A', categoryId: 7 },
         ]);
         expect(sendRawPacket).toHaveBeenCalledTimes(2);
     });
@@ -508,14 +508,16 @@ describe('apis/contacts / categorized friend roster', () => {
                 categoryName: '我的好友',
                 memberCount: 1,
                 sortId: 0,
-                friends: [{ uin: 10001, uid: 'u1', nickname: 'Default', remark: '' }],
+                friends: [
+                    { uin: 10001, uid: 'u1', nickname: 'Default', remark: '', categoryId: 0 },
+                ],
             },
             {
                 categoryId: 7,
                 categoryName: 'Work',
                 memberCount: 1,
                 sortId: 1,
-                friends: [{ uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A' }],
+                friends: [{ uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A', categoryId: 7 }],
             },
             {
                 categoryId: 9,
@@ -533,8 +535,8 @@ describe('apis/contacts / categorized friend roster', () => {
         expect(secondRequest.body?.cookie).toEqual(cookie);
         expect(rememberFriends).toHaveBeenCalledOnce();
         expect(rememberFriends).toHaveBeenCalledWith([
-            { uin: 10001, uid: 'u1', nickname: 'Default', remark: '' },
-            { uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A' },
+            { uin: 10001, uid: 'u1', nickname: 'Default', remark: '', categoryId: 0 },
+            { uin: 10002, uid: 'u2', nickname: 'Alice', remark: 'A', categoryId: 7 },
         ]);
     });
 
@@ -760,5 +762,14 @@ describe('apis/contacts / invite-card pending application', () => {
         expect(api.getGroupInviteCardSequence(12345)).toBe(778899);
         expect(api.findGroupInviteCardGroupBySequence(778899)).toBe(12345);
         expect(api.findGroupInviteCardGroupBySequence(1)).toBeUndefined();
+    });
+
+    it('requires a group when different groups have the same card sequence', () => {
+        const api = new ContactsApi({ identity: { uin: '10001' } } as any);
+        api.rememberGroupInviteCardSequence(12345, 778899);
+        api.rememberGroupInviteCardSequence(67890, 778899);
+
+        expect(() => api.findGroupInviteCardGroupBySequence(778899)).toThrow('multiple groups');
+        expect(api.findGroupInviteCardGroupBySequence(778899, 67890)).toBe(67890);
     });
 });

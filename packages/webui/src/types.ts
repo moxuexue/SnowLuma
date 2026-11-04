@@ -109,11 +109,18 @@ interface NetworkBase {
     reportSelfMessage: boolean;
 }
 
-export interface HttpServerNetwork extends NetworkBase {
+/** Mirrors the server's WsFrameLimitConfig: only adapters with a WS transport. */
+interface WsFrameLimitConfig {
+    /** Inbound WebSocket frame cap in bytes; omitted means the 100 MiB default. */
+    maxPayloadBytes?: number;
+}
+
+export interface HttpServerNetwork extends NetworkBase, WsFrameLimitConfig {
     host?: string;
     port: number;
     path?: string;
     enableWebSocket?: boolean;
+    enableSse?: boolean;
 }
 
 export interface HttpClientNetwork extends NetworkBase {
@@ -121,14 +128,14 @@ export interface HttpClientNetwork extends NetworkBase {
     timeoutMs?: number;
 }
 
-export interface WsServerNetwork extends NetworkBase {
+export interface WsServerNetwork extends NetworkBase, WsFrameLimitConfig {
     host?: string;
     port: number;
     path?: string;
     role?: WsRole;
 }
 
-export interface WsClientNetwork extends NetworkBase {
+export interface WsClientNetwork extends NetworkBase, WsFrameLimitConfig {
     url: string;
     role?: WsRole;
     reconnectIntervalMs?: number;

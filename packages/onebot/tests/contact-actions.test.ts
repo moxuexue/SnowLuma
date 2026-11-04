@@ -180,6 +180,69 @@ function makeGroupRequest(overrides: Partial<GroupRequestInfo> = {}): GroupReque
     };
 }
 
+describe('public contact profile output', () => {
+    const profile = {
+        sign: '',
+        age: 0,
+        level: 0,
+        sex: 'unknown' as const,
+        vipFlag: false,
+        svipFlag: false,
+        country: 'CN',
+        city: 'City',
+        email: '',
+        birthdayMonth: 2,
+        birthdayDay: 29,
+        privilegeIcons: {
+            open: [{ type: 1, iconUrl: 'normal', deluxeIconUrl: 'deluxe' }],
+            closed: [],
+        },
+    };
+    const expected = {
+        long_nick: '',
+        age: 0,
+        level: 0,
+        sex: 'unknown',
+        is_qq_vip: false,
+        is_vip: false,
+        country: 'CN',
+        city: 'City',
+        email: '',
+        birthday_month: 2,
+        birthday_day: 29,
+        privilege_icons: {
+            open: [{ type: 1, icon_url: 'normal', deluxe_icon_url: 'deluxe' }],
+            closed: [],
+        },
+    };
+
+    it('returns the same public fields for friends and stranger profiles without invented values', async () => {
+        const fetchFriendList = vi.fn(async () => [
+            { ...makeFriend(123, 'Name'), categoryId: 0, profile },
+        ]);
+        const bridge = fakeBridge({
+            fetchFriendList,
+            fetchUserProfile: vi.fn(async () => ({ ...makeProfile(123, 'Name'), profile })),
+        });
+        const friends = await getFriendList(bridge, true);
+        expect(friends[0]).toMatchObject({ user_id: 123, category_id: 0, ...expected });
+        expect(friends[0]).not.toHaveProperty('phone_num');
+        expect(friends[0]).not.toHaveProperty('birthday_year');
+        expect(fetchFriendList).toHaveBeenCalledWith({ withProfile: true });
+        expect(await getStrangerInfo(bridge, 123)).toMatchObject(expected);
+    });
+
+    it('does not mask explicit enrichment failures with cached friends', async () => {
+        const bridge = fakeBridge({
+            fetchFriendList: vi.fn().mockRejectedValue(new Error('profile failed')),
+            identity: fakeIdentity({ friends: [makeFriend(123, 'Cached')] }),
+        });
+        await expect(getFriendList(bridge, true)).rejects.toThrow('profile failed');
+        // The legacy ordinary-list cache behavior remains available.
+        expect((await getFriendList(bridge))[0]?.nickname).toBe('Cached');
+    });
+});
+
 // ─── Tests ───
 
 describe('onebot/contact-actions / getLoginInfo', () => {
@@ -739,6 +802,9 @@ describe('onebot/contact-actions / getStrangerInfo', () => {
                 qid: 'my_qid',
                 level: 64,
                 regTime: 1_200_000_000,
+                birthdayYear: 2000,
+                birthdayMonth: 3,
+                birthdayDay: 15,
                 svipFlag: true,
                 yearVipFlag: false,
                 vipLevel: 7,
@@ -752,6 +818,9 @@ describe('onebot/contact-actions / getStrangerInfo', () => {
             qqLevel: 64,
             level: 64,
             reg_time: 1_200_000_000,
+            birthday_year: 2000,
+            birthday_month: 3,
+            birthday_day: 15,
             is_vip: true,
             is_years_vip: false,
             vip_level: 7,
@@ -765,9 +834,30 @@ describe('onebot/contact-actions / getStrangerInfo', () => {
         });
         const out = await getStrangerInfo(bridge, 55555);
 
-        for (const field of ['reg_time', 'is_vip', 'is_years_vip', 'vip_level']) {
+        for (const field of [
+            'reg_time',
+            'birthday_year',
+            'birthday_month',
+            'birthday_day',
+            'is_vip',
+            'is_years_vip',
+            'vip_level',
+        ]) {
             expect(out).not.toHaveProperty(field);
         }
+    });
+
+    it('omits only birthday_year when the birth year is hidden', async () => {
+        const bridge = fakeBridge({
+            fetchUserProfile: vi.fn(async () => ({
+                ...makeProfile(55555, 'member'),
+                birthdayMonth: 12,
+                birthdayDay: 31,
+            })),
+        });
+        const out = await getStrangerInfo(bridge, 55555);
+        expect(out).toMatchObject({ birthday_month: 12, birthday_day: 31 });
+        expect(out).not.toHaveProperty('birthday_year');
     });
 
     it('returns a fetched profile', async () => {

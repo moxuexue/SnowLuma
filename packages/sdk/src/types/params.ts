@@ -627,6 +627,22 @@ export interface GetQzonePublicFeedsParams extends JsonObject {
     cursor?: string;
 }
 
+export interface GetQzoneHomeFeedsParams extends JsonObject {
+    target_uin?: ActionNumberInput;
+    /** Continuation for the same account and target homepage. */
+    cursor?: string;
+}
+
+export interface GetQzoneFeedDetailParams extends JsonObject {
+    /** 24 hexadecimal characters from get_qzone_msg_list or send_qzone_msg. */
+    tid: string;
+}
+
+export interface GetQzoneShareArkParams extends JsonObject {
+    /** Original feed from get_qzone_feed_detail, get_qzone_home_feeds or get_qzone_public_feeds. */
+    feed: JsonObject;
+}
+
 export interface QzonePublicFeedParams extends JsonObject {
     /** The original feed cells returned in get_qzone_public_feeds.feeds. */
     feed: JsonObject;
@@ -787,4 +803,8 @@ export type DownloadFileStreamParams = JsonObject & {
 
 export interface TestDownloadStreamParams extends JsonObject {
     error?: ActionBooleanInput;
+}
+export interface GetFriendListParams extends JsonObject {
+    /** Query missing public profiles explicitly; cached per account for five minutes. */
+    with_profile?: boolean;
 }

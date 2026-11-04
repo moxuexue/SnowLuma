@@ -545,6 +545,7 @@ class FrameReader {
 }
 
 export class QqHookClient extends EventEmitter {
+    private readonly connectingSockets = new Set<net.Socket>();
     readonly pid: number;
     readonly runtimeDir: string;
     readonly defaultAckTimeoutMs: number;
@@ -563,6 +564,7 @@ export class QqHookClient extends EventEmitter {
     private recvHelloResolver: Deferred<QqHookHello> | null = null;
     private controlWriteChain: Promise<unknown> = Promise.resolve();
     private closed = false;
+    private runtimeFailure: Error | null = null;
     private loginState: QqHookLoginState = { loggedIn: false, uin: '0', uinNumber: 0n };
     private readonly loginWaiters = new Set<Deferred<QqHookLoginState>>();
 
@@ -615,10 +617,7 @@ export class QqHookClient extends EventEmitter {
 
     async waitForLogin({ timeoutMs = 0 } = {}): Promise<QqHookLoginState> {
         await this.connect();
-
-        if (this.closed) {
-            throw new Error('qq_hook client is closed');
-        }
+        this.assertUsable();
 
         if (this.loginState.loggedIn) {
             return this.getLoginState();
@@ -692,9 +691,7 @@ export class QqHookClient extends EventEmitter {
     }
 
     async connect(): Promise<QqHookHello> {
-        if (this.closed) {
-            throw new Error('qq_hook client is closed');
-        }
+        this.assertUsable();
 
         if (this.controlSocket && this.controlHello) {
             return this.controlHello;
@@ -714,9 +711,7 @@ export class QqHookClient extends EventEmitter {
     }
 
     async startRecv(onPacket?: (packet: QqHookPacket) => void): Promise<QqHookHello> {
-        if (this.closed) {
-            throw new Error('qq_hook client is closed');
-        }
+        this.assertUsable();
 
         if (typeof onPacket === 'function') {
             this.on('packet', onPacket);
@@ -981,6 +976,12 @@ export class QqHookClient extends EventEmitter {
         this.rejectRecvPending(new Error('qq_hook client closed'));
         this.rejectLoginWaiters(new Error('qq_hook client closed'));
 
+        for (const socket of this.connectingSockets) {
+            socket.destroy();
+        }
+
+        this.connectingSockets.clear();
+
         if (this.controlSocket) {
             this.controlSocket.destroy();
             this.controlSocket = null;
@@ -994,6 +995,16 @@ export class QqHookClient extends EventEmitter {
         this.controlHello = null;
         this.recvHello = null;
         this.controlWriteChain = Promise.resolve();
+    }
+
+    private assertUsable(): void {
+        if (this.runtimeFailure) {
+            throw this.runtimeFailure;
+        }
+
+        if (this.closed) {
+            throw new Error('qq_hook client is closed');
+        }
     }
 
     private rejectLoginWaiters(error: Error): void {
@@ -1033,26 +1044,28 @@ export class QqHookClient extends EventEmitter {
         const socket = this.controlSocket;
 
         if (!socket || socket.destroyed) {
-            return Promise.reject(new Error('control pipe is not connected'));
+            return Promise.reject(
+                this.runtimeFailure ?? new Error('control pipe is not connected'),
+            );
         }
 
-        const writePromise = this.controlWriteChain.then(
-            () =>
-                new Promise<void>((resolve, reject) => {
-                    if (!this.controlSocket || this.controlSocket.destroyed) {
-                        reject(new Error('control pipe is not connected'));
-                        return;
-                    }
+        const writePromise = this.controlWriteChain.then(() => {
+            this.assertUsable();
 
-                    socket.write(payload, (error) => {
-                        if (error) {
-                            reject(error);
-                        } else {
-                            resolve();
-                        }
-                    });
-                }),
-        );
+            if (this.controlSocket !== socket || socket.destroyed) {
+                throw new Error('control pipe is not connected');
+            }
+
+            return new Promise<void>((resolve, reject) => {
+                socket.write(payload, (error) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve();
+                    }
+                });
+            });
+        });
         this.controlWriteChain = writePromise.catch(() => {});
         return writePromise;
     }
@@ -1132,6 +1145,11 @@ export class QqHookClient extends EventEmitter {
                     ),
                 );
 
+                if (this.closed || this.runtimeFailure) {
+                    socket.destroy();
+                    this.assertUsable();
+                }
+
                 if (kind === 'control') {
                     this.controlSocket = socket;
                 } else {
@@ -1145,6 +1163,8 @@ export class QqHookClient extends EventEmitter {
                 );
                 phase = 'hello';
                 const hello = await this.waitForHello(kind === 'recv');
+
+                this.assertUsable();
 
                 if (kind === 'control') {
                     this.controlHello = hello;
@@ -1181,10 +1201,19 @@ export class QqHookClient extends EventEmitter {
     ): Promise<net.Socket> {
         return new Promise((resolve, reject) => {
             const socket = net.createConnection(pipeName);
+            this.connectingSockets.add(socket);
             const reader = new FrameReader(onFrame);
             const onInitialError = (error: Error) => reject(error);
-            socket.once('error', onInitialError);
-            socket.once('connect', () => {
+
+            const onInitialClose = () => {
+                this.connectingSockets.delete(socket);
+                socket.off('connect', onConnect);
+                reject(new Error(`${kind} pipe closed before connecting`));
+            };
+
+            const onConnect = () => {
+                this.connectingSockets.delete(socket);
+                socket.off('close', onInitialClose);
                 socket.off('error', onInitialError);
                 socket.on('data', (chunk) => {
                     try {
@@ -1204,7 +1233,11 @@ export class QqHookClient extends EventEmitter {
                     });
                 });
                 resolve(socket);
-            });
+            };
+
+            socket.once('error', onInitialError);
+            socket.once('close', onInitialClose);
+            socket.once('connect', onConnect);
         });
     }
 
@@ -1301,6 +1334,10 @@ export class QqHookClient extends EventEmitter {
     }
 
     private handleControlFrame(frame: PipeFrame): void {
+        if (this.runtimeFailure) {
+            return;
+        }
+
         if (frame.op === PipeOp.hello) {
             this.resolveHello(frame, false);
             return;
@@ -1346,6 +1383,16 @@ export class QqHookClient extends EventEmitter {
                 frame.status,
                 frame.requestId,
             );
+
+            if (frame.requestId === 0 && frame.cmd === 'runtime') {
+                this.runtimeFailure = error;
+                this.rejectControlPending(error);
+                this.rejectRecvPending(error);
+                this.rejectLoginWaiters(error);
+                this.emit('runtimeError', error);
+                return;
+            }
+
             const ack = this.pendingAcks.get(frame.requestId);
 
             if (ack) {
@@ -1363,6 +1410,10 @@ export class QqHookClient extends EventEmitter {
     }
 
     private handleRecvFrame(frame: PipeFrame): void {
+        if (this.runtimeFailure) {
+            return;
+        }
+
         if (frame.op === PipeOp.hello) {
             this.resolveHello(frame, true);
             return;
@@ -1378,9 +1429,10 @@ export class QqHookClient extends EventEmitter {
                 runtimeLog.debug('Client private-message reporting is available: PID=%d', this.pid);
             } else {
                 runtimeLog.warn(
-                    'Client private-message reporting is unavailable: PID=%d status=%d',
+                    'Client private-message reporting is unavailable: PID=%d status=%d%s',
                     this.pid,
                     frame.status,
+                    frame.value0 === 0n ? '' : ` reason=${frame.value0}`,
                 );
             }
 
