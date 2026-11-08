@@ -283,6 +283,7 @@ export interface QQEvent {
 
 export interface FriendMessage extends QQEvent {
     kind: 'friend_message';
+    autoReply?: true;
     senderUin: number;
     /** The other participant in this private conversation. Differs from
      *  senderUin for messages sent by the logged-in account. */
@@ -326,6 +327,7 @@ export interface GroupMessage extends QQEvent {
 
 export interface TempMessage extends QQEvent {
     kind: 'temp_message';
+    autoReply?: true;
     senderUin: number;
     /** Source group of the temp session (from responseHead.forward), or 0. */
     groupId: number;
@@ -344,6 +346,9 @@ export interface GroupMemberJoin extends QQEvent {
     operatorUin: number;
     userUid?: string;
     operatorUid?: string;
+    /** Independent invitation origin; never inferred from the operator. */
+    invitorUid?: string;
+    invitorUin?: number;
     /**
      * Admission mode derived from GroupChange field 4. This is deliberately
      * separate from QQ's nested invitation-source enum, which has different

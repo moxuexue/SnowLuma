@@ -1,6 +1,30 @@
 import type { pb, pb_repeated, int_32, uint_32, uint_64, bytes } from '@snowluma/proton';
 import type { Elem } from './element';
 
+export interface GroupCardPart {
+    control?: pb<1, bytes>;
+    text?: pb<2, bytes>;
+}
+
+export interface RichGroupCard {
+    parts?: pb_repeated<1, GroupCardPart>;
+}
+
+/** Join-origin metadata used by QQ's member-add notification handler. */
+export interface GroupJoinOrigin {
+    /** 1 names a QR-code sharer rather than an inviter. */
+    type?: pb<1, uint_32>;
+    uid?: pb<3, bytes>;
+}
+
+export interface GroupJoinExtra {
+    origin?: pb<1, GroupJoinOrigin>;
+}
+
+export interface GroupMessageKey {
+    joinExtra?: pb<4, GroupJoinExtra>;
+}
+
 // ResponseHead.Grp
 export interface ResponseGrp {
     groupUin?: pb<1, uint_32>;
@@ -13,9 +37,12 @@ export interface ResponseGrp {
      *  message shows "星屿"/"墨梓柒111" (the card) here while field 2 is empty, and
      *  forward nodes carry per-node sender names here. Lagrange labels this
      *  `MemberName`; we keep `memberName` for the field-2 group-history slot. */
-    memberCard?: pb<4, string>;
+    memberCard?: pb<4, bytes>;
+    /** Type 2 carries the literal sender nickname. Other values may carry a RichGroupCard. */
+    memberCardType?: pb<5, uint_32>;
     /** The real group name (Lagrange: GroupName). "测试123" on-target. */
     groupName?: pb<7, string>;
+    messageKey?: pb<8, GroupMessageKey>;
 }
 
 export interface ResponseForward {
@@ -49,6 +76,8 @@ export interface ContentHead {
     sequence?: pb<5, uint_32>;
     timestamp?: pb<6, uint_32>;
     field7?: pb<7, uint_64>;
+    /** QQ sets a nonzero value for automatic replies. */
+    autoReply?: pb<10, uint_32>;
     /** Conversation-wide C2C sequence. Unlike field 5, this advances across
      *  messages sent by either participant and is the sequence accepted by
      *  SsoGetC2cMsg. It is absent on group messages. */

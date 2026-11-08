@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createSingleFlightCache } from '../src/single-flight-cache';
 
 /** A promise whose resolve/reject is exposed, for driving single-flight races. */
@@ -13,6 +13,129 @@ function deferred<T>() {
 }
 
 describe('SingleFlightCache', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('disposes retained values and rejects new reads without restarting loads or timers', async () => {
+        vi.useFakeTimers();
+        const load = vi.fn(async (key: string) => ({ key }));
+        const cache = createSingleFlightCache({ ttlMs: 300_000, load });
+        await cache.get('first');
+        await cache.get('second');
+        expect(vi.getTimerCount()).toBe(1);
+
+        cache.dispose();
+        cache.dispose();
+        cache.clear();
+
+        expect(cache.size).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+        await expect(cache.get('first')).rejects.toThrow('disposed');
+        await expect(cache.get('new', { force: true })).rejects.toThrow('disposed');
+        expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['resolve', 'reject'] as const)(
+        'preserves a pending %s after disposal without retaining the result',
+        async (outcome) => {
+            vi.useFakeTimers();
+            const pending = deferred<string>();
+            const cache = createSingleFlightCache({ ttlMs: 300_000, load: () => pending.promise });
+            const first = cache.get('key');
+            expect(cache.get('key')).toBe(first);
+            cache.dispose();
+
+            if (outcome === 'resolve') {
+                pending.resolve('late value');
+                await expect(first).resolves.toBe('late value');
+            } else {
+                pending.reject(new Error('late failure'));
+                await expect(first).rejects.toThrow('late failure');
+            }
+
+            expect(cache.size).toBe(0);
+            expect(vi.getTimerCount()).toBe(0);
+        },
+    );
+
+    it('releases expired values while idle without expiring newer values early', async () => {
+        vi.useFakeTimers();
+        const load = vi.fn(async (key: string) => ({ key }));
+        const cache = createSingleFlightCache({ ttlMs: 1000, load });
+        await cache.get('old');
+        await vi.advanceTimersByTimeAsync(500);
+        const newer = await cache.get('new');
+
+        expect(cache.size).toBe(2);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(cache.size).toBe(1);
+        expect(await cache.get('new')).toBe(newer);
+        expect(load).toHaveBeenCalledTimes(2);
+
+        await vi.advanceTimersByTimeAsync(500);
+        expect(cache.size).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('keeps a refreshed entry until its new deadline and expires other keys', async () => {
+        vi.useFakeTimers();
+        const cache = createSingleFlightCache({ ttlMs: 1000, load: async (key: string) => key });
+        await cache.get('refreshed');
+        await cache.get('old');
+        await vi.advanceTimersByTimeAsync(500);
+        await cache.get('refreshed', { force: true });
+
+        await vi.advanceTimersByTimeAsync(500);
+        expect(cache.size).toBe(1);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(cache.size).toBe(0);
+    });
+
+    it.each(['invalidate', 'clear'] as const)(
+        '%s cancels idle cleanup when the last value is removed',
+        async (operation) => {
+            vi.useFakeTimers();
+            const cache = createSingleFlightCache({ ttlMs: 1000, load: async () => 'value' });
+            await cache.get('key');
+            expect(vi.getTimerCount()).toBe(1);
+            cache[operation]('key');
+            expect(cache.size).toBe(0);
+            expect(vi.getTimerCount()).toBe(0);
+
+            await cache.get('key');
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(cache.size).toBe(0);
+        },
+    );
+
+    it('does not let expiration detach a pending refresh', async () => {
+        vi.useFakeTimers();
+        const pending = deferred<string>();
+        const load = vi.fn().mockResolvedValueOnce('old').mockReturnValue(pending.promise);
+        const cache = createSingleFlightCache<string, string>({ ttlMs: 1000, load });
+        await cache.get('key');
+        const refresh = cache.get('key', { force: true });
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(cache.size).toBe(0);
+        expect(cache.get('key')).toBe(refresh);
+        pending.resolve('new');
+        await expect(refresh).resolves.toBe('new');
+        expect(cache.size).toBe(1);
+        expect(load).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(cache.size).toBe(0);
+    });
+
+    it('does not retain values when caching is disabled by a zero TTL', async () => {
+        vi.useFakeTimers();
+        const cache = createSingleFlightCache({ ttlMs: 0, load: async () => 'value' });
+        await expect(cache.get('key')).resolves.toBe('value');
+        expect(cache.size).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it.each(['invalidate', 'clear'] as const)(
         '%s detaches pending loads from the cache',
         async (operation) => {
